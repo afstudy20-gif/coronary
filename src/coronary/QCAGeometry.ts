@@ -103,6 +103,19 @@ export function cross(lhs: Vec3, rhs: Vec3): Vec3 {
   ];
 }
 
+export function rotateAroundAxis(vector: Vec3, axis: Vec3, angleRad: number): Vec3 {
+  const unitAxis = normalize(axis);
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+  const d = dot(vector, unitAxis);
+  const cx = cross(unitAxis, vector);
+  return [
+    vector[0] * cos + cx[0] * sin + unitAxis[0] * d * (1 - cos),
+    vector[1] * cos + cx[1] * sin + unitAxis[1] * d * (1 - cos),
+    vector[2] * cos + cx[2] * sin + unitAxis[2] * d * (1 - cos),
+  ];
+}
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -298,7 +311,7 @@ function calculatePlaqueMetricsFromContours(record: CoronaryVesselRecord) {
 
   if (sorted.length < 2) return undefined;
 
-  const plaque: any = {
+  const plaque: PlaqueMetrics = {
     totalVolumeMm3: 0,
     calcifiedVolumeMm3: 0,
     fibrousVolumeMm3: 0,
@@ -351,20 +364,17 @@ function calculatePlaqueMetricsFromContours(record: CoronaryVesselRecord) {
 
 function contourArea(points: WorldPoint3D[]): number {
   if (points.length < 3) return 0;
-  // Shoelace formula in local 2D (approximate since they are nearly planar)
-  // We'll use the 'u, w' coordinates from the frame if we had them, 
-  // or just 3D distance from center but that's harder.
-  // Let's assume they are planar and use a simpler radial area if we generated them circular.
-  
-  // For now, let's just use the radius of the first point as an approximation for circular contours
-  const center = {
-    x: points.reduce((s, p) => s + p.x, 0) / points.length,
-    y: points.reduce((s, p) => s + p.y, 0) / points.length,
-    z: points.reduce((s, p) => s + p.z, 0) / points.length,
-  };
-  const rSum = points.reduce((s, p) => s + pointDistance(p, center), 0);
-  const rAvg = rSum / points.length;
-  return Math.PI * rAvg * rAvg;
+  // 3D polygon area via cross-product summation (works for nearly-planar polygons)
+  let cx = 0, cy = 0, cz = 0;
+  const n = points.length;
+  for (let i = 0; i < n; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % n];
+    cx += a.y * b.z - a.z * b.y;
+    cy += a.z * b.x - a.x * b.z;
+    cz += a.x * b.y - a.y * b.x;
+  }
+  return 0.5 * Math.hypot(cx, cy, cz);
 }
 
 export function contourInnerOuterRadii(contour: LumenContour, center: WorldPoint3D): { inner: number; outer: number } {
@@ -381,18 +391,16 @@ export function contourInnerOuterRadii(contour: LumenContour, center: WorldPoint
   return { inner: rLAvg, outer: rVAvg };
 }
 
-export function interpolateContourRadii(contours: LumenContour[], centerline: WorldPoint3D[], distanceMm: number): { inner: number; outer: number } {
-  if (contours.length === 0) return { inner: 0, outer: 0 };
-  
-  const sorted = [...contours].sort((a, b) => a.distanceMm - b.distanceMm);
-  
+function interpolateContourRadiiSorted(sorted: LumenContour[], centerline: WorldPoint3D[], distanceMm: number): { inner: number; outer: number } {
+  if (sorted.length === 0) return { inner: 0, outer: 0 };
+
   if (distanceMm <= sorted[0].distanceMm) {
      return contourInnerOuterRadii(sorted[0], pointAtDist(centerline, sorted[0].distanceMm));
   }
   if (distanceMm >= sorted[sorted.length - 1].distanceMm) {
      return contourInnerOuterRadii(sorted[sorted.length - 1], pointAtDist(centerline, sorted[sorted.length - 1].distanceMm));
   }
-  
+
   for (let i = 0; i < sorted.length - 1; i++) {
     const c1 = sorted[i];
     const c2 = sorted[i + 1];
@@ -406,21 +414,27 @@ export function interpolateContourRadii(contours: LumenContour[], centerline: Wo
       };
     }
   }
-  
+
   return { inner: 0, outer: 0 };
+}
+
+export function interpolateContourRadii(contours: LumenContour[], centerline: WorldPoint3D[], distanceMm: number): { inner: number; outer: number } {
+  const sorted = [...contours].sort((a, b) => a.distanceMm - b.distanceMm);
+  return interpolateContourRadiiSorted(sorted, centerline, distanceMm);
 }
 
 export function findClinicalMarkers(contours: LumenContour[], centerline: WorldPoint3D[]): ClinicalMarkers {
   if (contours.length === 0) return { mldDistanceMm: 0, mldDiameterMm: 0 };
-  
-  let mldDist = contours[0].distanceMm;
-  let minD = 999;
-  
+
+  const sorted = [...contours].sort((a, b) => a.distanceMm - b.distanceMm);
+  let mldDist = sorted[0].distanceMm;
+  let minD = Infinity;
+
   const totalLength = polylineLength(centerline);
   const StepMm = 0.5;
-  
+
   for (let d = 0; d <= totalLength; d += StepMm) {
-     const radii = interpolateContourRadii(contours, centerline, d);
+     const radii = interpolateContourRadiiSorted(sorted, centerline, d);
      const diam = radii.inner * 2;
      if (diam < minD) {
         minD = diam;
@@ -428,13 +442,13 @@ export function findClinicalMarkers(contours: LumenContour[], centerline: WorldP
      }
   }
   
-  // Distal Ref (usually 5-10mm distal to lesion/MLD)
-  const distalRefDist = Math.max(0, mldDist - 5);
-  const distalRefRadii = interpolateContourRadii(contours, centerline, distalRefDist);
-  
-  // Proximal Ref (usually 5-10mm proximal to lesion/MLD)
-  const proximalRefDist = Math.min(totalLength, mldDist + 5);
-  const proximalRefRadii = interpolateContourRadii(contours, centerline, proximalRefDist);
+  // Proximal Ref (5mm proximal to MLD, i.e. closer to ostium / smaller distance)
+  const proximalRefDist = Math.max(0, mldDist - 5);
+  const proximalRefRadii = interpolateContourRadiiSorted(sorted, centerline, proximalRefDist);
+
+  // Distal Ref (5mm distal to MLD, i.e. further from ostium / larger distance)
+  const distalRefDist = Math.min(totalLength, mldDist + 5);
+  const distalRefRadii = interpolateContourRadiiSorted(sorted, centerline, distalRefDist);
   
   return {
      mldDistanceMm: mldDist,

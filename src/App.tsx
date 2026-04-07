@@ -16,6 +16,7 @@ const VIEWPORT_IDS = [...ORTHO_VIEWPORT_IDS, 'volume3d'] as const;
 
 export default function App() {
   const renderingEngineRef = useRef<cornerstone.RenderingEngine | null>(null);
+  const advancedInteractionsCleanupRef = useRef<(() => void) | null>(null);
 
   const [isInitialized, setIsInitialized] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -46,6 +47,8 @@ export default function App() {
 
     return () => {
       mounted = false;
+      advancedInteractionsCleanupRef.current?.();
+      advancedInteractionsCleanupRef.current = null;
       destroyToolGroups();
       renderingEngineRef.current?.destroy();
     };
@@ -87,11 +90,11 @@ export default function App() {
     setIsLoading(true);
     setLoadingProgress(`Loading images: 0/${series.imageIds.length}`);
 
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-
     let stage = 'initialization';
     try {
+      stage = 'cleanupAdvancedInteractions';
+      advancedInteractionsCleanupRef.current?.();
+      advancedInteractionsCleanupRef.current = null;
       stage = 'destroyToolGroups';
       destroyToolGroups();
       stage = 'purgeCache';
@@ -176,8 +179,7 @@ export default function App() {
       engine.renderViewports([...VIEWPORT_IDS]);
       setViewportSetupToken((value) => value + 1);
 
-      // Phase 11: Attach advanced clinical interactions
-      attachAdvancedInteractions(RENDERING_ENGINE_ID);
+      advancedInteractionsCleanupRef.current = attachAdvancedInteractions(RENDERING_ENGINE_ID);
     } catch (seriesError: any) {
       console.error(`[loadSeries:${stage}]`, seriesError);
       setError(`Failed to load series at ${stage}: ${seriesError.message}`);

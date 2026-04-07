@@ -10,7 +10,7 @@ import {
   type CoronaryCenterlineMode,
 } from '../coronary/CoronaryCenterlineOverlay';
 import type { CoronaryVesselId, CoronaryVesselRecord, ManualQCAInput, WorldPoint3D, LumenContour } from '../coronary/QCATypes';
-import { pointAtDist, frameAtDist, generateVesselWallContour } from '../coronary/QCAGeometry';
+import { pointAtDist, frameAtDist, generateVesselWallContour, type Vec3 } from '../coronary/QCAGeometry';
 import type { DicomSeriesInfo } from '../core/dicomLoader';
 import { setActiveTool } from '../core/toolManager';
 import { 
@@ -22,6 +22,37 @@ import { LongitudinalProfile } from './LongitudinalProfile';
 
 const VIEWPORT_IDS = ['axial', 'sagittal', 'coronal'] as const;
 const BRANCH_PRESETS = ['D1', 'D2', 'OM1', 'OM2', 'PDA', 'PLV', 'RI', 'Diag', 'Septal'];
+
+const AIR_HU = -1000;
+
+function createVoxelSampler(volume: cornerstone.Types.IImageVolume): ((world: Vec3) => number) | null {
+  const imgVol = volume as cornerstone.Types.IImageVolume & {
+    imageData?: { worldToIndex(point: number[]): number[] };
+    dimensions?: number[];
+    getScalarData?(): ArrayLike<number>;
+  };
+  if (!imgVol.imageData?.worldToIndex || !imgVol.dimensions || !imgVol.getScalarData) {
+    return null;
+  }
+  const dims = imgVol.dimensions;
+  let scalarData: ArrayLike<number>;
+  try {
+    scalarData = imgVol.getScalarData();
+  } catch {
+    return null;
+  }
+  return (world: Vec3): number => {
+    const index = imgVol.imageData!.worldToIndex(world as unknown as number[]);
+    const i = Math.floor(index[0]);
+    const j = Math.floor(index[1]);
+    const k = Math.floor(index[2]);
+    if (i < 0 || i >= dims[0] || j < 0 || j >= dims[1] || k < 0 || k >= dims[2]) {
+      return AIR_HU;
+    }
+    const offset = i + j * dims[0] + k * dims[0] * dims[1];
+    return scalarData[offset] ?? AIR_HU;
+  };
+}
 const CENTERLINE_COLORS = ['#ff9f68', '#79c7ff', '#f8d16c', '#8dd6a5', '#d8a2ff', '#ff8fb1', '#6fe7d2'];
 
 type WorkflowStep = 'define' | 'analysis';
@@ -156,10 +187,10 @@ export function CoronaryWorkspace({ renderingEngineId, volumeId, series, resetTo
   }, [activeCenterlineId, records]);
 
   const handleContourChange = (contour: LumenContour) => {
-    // If we have both lumen and vessel points, we can sample the composition
     if (contour.points.length > 0 && contour.vesselPoints && contour.vesselPoints.length > 0) {
        const volume = cornerstone.cache.getVolume(volumeId);
-       if (volume) {
+       const sampler = volume ? createVoxelSampler(volume) : null;
+       if (sampler) {
           const center = pointAtDist(activeRecord.centerlinePoints, contour.distanceMm);
           const frame = frameAtDist(activeRecord.centerlinePoints, contour.distanceMm);
           const composition = samplePlaqueComposition(
@@ -167,30 +198,8 @@ export function CoronaryWorkspace({ renderingEngineId, volumeId, series, resetTo
              contour.vesselPoints,
              center,
              frame,
-             (world) => {
-                const imgVol = volume as any;
-                const index = imgVol.imageData.worldToIndex(world as any);
-                const dims = imgVol.dimensions;
-                if (index[0] < 0 || index[0] >= dims[0] || 
-                    index[1] < 0 || index[1] >= dims[1] || 
-                    index[2] < 0 || index[2] >= dims[2]) {
-                   return -1000;
-                }
-                const i = Math.floor(index[0]);
-                const j = Math.floor(index[1]);
-                const k = Math.floor(index[2]);
-                let scalarData;
-                try {
-                   scalarData = imgVol.getScalarData() as any;
-                } catch (e) {
-                   return -1000;
-                }
-                const offset = i + j * dims[0] + k * dims[0] * dims[1];
-                return scalarData[offset] ?? -1000;
-             }
+             sampler,
           );
-          
-          // Map to areas for volume integration
           contour.composition = {
              lapAreaMm2: composition.lap,
              fibrofattyAreaMm2: composition.fibrofatty,

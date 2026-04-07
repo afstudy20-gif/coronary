@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as cornerstone from '@cornerstonejs/core';
+import {
+  normalize as normalizeVec3,
+  cross as crossVec3,
+  rotateAroundAxis as rotateAroundAxisVec3,
+  type Vec3,
+} from '../coronary/QCAGeometry';
 
 type OrthoViewportName = 'axial' | 'sagittal' | 'coronal';
 type ViewportName = OrthoViewportName | 'volume3d';
@@ -77,19 +83,11 @@ function clonePresentations() {
 }
 
 function normalize(vector: cornerstone.Types.Point3): cornerstone.Types.Point3 {
-  const length = Math.hypot(vector[0], vector[1], vector[2]);
-  if (!length) {
-    return [0, 0, 1];
-  }
-  return [vector[0] / length, vector[1] / length, vector[2] / length];
+  return normalizeVec3(vector as Vec3) as cornerstone.Types.Point3;
 }
 
 function cross(lhs: cornerstone.Types.Point3, rhs: cornerstone.Types.Point3): cornerstone.Types.Point3 {
-  return [
-    lhs[1] * rhs[2] - lhs[2] * rhs[1],
-    lhs[2] * rhs[0] - lhs[0] * rhs[2],
-    lhs[0] * rhs[1] - lhs[1] * rhs[0],
-  ];
+  return crossVec3(lhs as Vec3, rhs as Vec3) as cornerstone.Types.Point3;
 }
 
 function rotateAroundAxis(
@@ -97,23 +95,7 @@ function rotateAroundAxis(
   axis: cornerstone.Types.Point3,
   angleRad: number
 ): cornerstone.Types.Point3 {
-  const unitAxis = normalize(axis);
-  const cos = Math.cos(angleRad);
-  const sin = Math.sin(angleRad);
-  const dot =
-    vector[0] * unitAxis[0] + vector[1] * unitAxis[1] + vector[2] * unitAxis[2];
-
-  return [
-    vector[0] * cos +
-      (unitAxis[1] * vector[2] - unitAxis[2] * vector[1]) * sin +
-      unitAxis[0] * dot * (1 - cos),
-    vector[1] * cos +
-      (unitAxis[2] * vector[0] - unitAxis[0] * vector[2]) * sin +
-      unitAxis[1] * dot * (1 - cos),
-    vector[2] * cos +
-      (unitAxis[0] * vector[1] - unitAxis[1] * vector[0]) * sin +
-      unitAxis[2] * dot * (1 - cos),
-  ];
+  return rotateAroundAxisVec3(vector as Vec3, axis as Vec3, angleRad) as cornerstone.Types.Point3;
 }
 
 function labelForMode(mode: ViewMode): string {

@@ -65,7 +65,12 @@ export class CoronaryMeasurementSession {
       manual: { ...record.manual },
       markers: record.markers.map((m) => ({ ...m })),
       stenosisMeasurement: record.stenosisMeasurement ? { ...record.stenosisMeasurement } : undefined,
-      lumenContours: record.lumenContours.map((c) => ({ ...c, points: c.points.map(p => ({ ...p })) })),
+      lumenContours: record.lumenContours.map((c) => ({
+        ...c,
+        points: c.points.map(p => ({ ...p })),
+        vesselPoints: c.vesselPoints?.map(p => ({ ...p })),
+        composition: c.composition ? { ...c.composition } : undefined,
+      })),
     }));
   }
 
