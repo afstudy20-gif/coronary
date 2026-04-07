@@ -1,0 +1,36 @@
+# dependency directories
+node_modules/
+
+# build directories
+dist/
+build/
+.next/
+out/
+
+# environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# system files
+.DS_Store
+Thumbs.db
+
+# local project files
+.gemini/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# coronary analysis artifacts
+/tmp/
+*.webp
+*.png
