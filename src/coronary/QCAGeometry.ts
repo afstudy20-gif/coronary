@@ -120,6 +120,201 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+// ── 2D Point type ──
+
+export interface Point2D {
+  x: number;
+  y: number;
+}
+
+// ── Plane Basis Construction ──
+
+export interface PlaneBasis {
+  basisU: Vec3;
+  basisV: Vec3;
+  normal: Vec3;
+}
+
+export function planeBasisMake(planeNormal: Vec3): PlaneBasis {
+  let normal = normalize(planeNormal);
+  if (magnitude(normal) < 1e-9) {
+    normal = [0, 0, 1];
+  }
+  const helper: Vec3 = Math.abs(normal[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0];
+  let basisU = normalize(cross(helper, normal));
+  if (magnitude(basisU) < 1e-9) {
+    basisU = normalize(cross([1, 0, 0], normal));
+  }
+  const basisV = normalize(cross(normal, basisU));
+  return { basisU, basisV, normal };
+}
+
+export function projectToPlaneBasis(worldPoint: Vec3, planeOrigin: Vec3, basis: PlaneBasis): Point2D {
+  const delta = subtract(worldPoint, planeOrigin);
+  return { x: dot(delta, basis.basisU), y: dot(delta, basis.basisV) };
+}
+
+// ── Convex Hull (Andrew's monotone chain) ──
+
+function cross2D(o: Point2D, a: Point2D, b: Point2D): number {
+  return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+}
+
+export function convexHull(points: Point2D[]): Point2D[] {
+  if (points.length <= 3) return points;
+  const sorted = [...points].sort((a, b) => Math.abs(a.x - b.x) > 1e-9 ? a.x - b.x : a.y - b.y);
+
+  const lower: Point2D[] = [];
+  for (const p of sorted) {
+    while (lower.length >= 2 && cross2D(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper: Point2D[] = [];
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const p = sorted[i];
+    while (upper.length >= 2 && cross2D(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper);
+}
+
+// ── Proper Contour Geometry (area, perimeter, min/max diameter via convex hull) ──
+
+export interface ContourGeometry {
+  areaMm2: number;
+  perimeterMm: number;
+  minDiameterMm: number;
+  maxDiameterMm: number;
+  equivalentDiameterMm: number;
+  centroid: WorldPoint3D;
+}
+
+export function calculateContourGeometry(worldPoints: WorldPoint3D[], planeNormal: Vec3): ContourGeometry {
+  const n = worldPoints.length;
+  const result: ContourGeometry = {
+    areaMm2: 0, perimeterMm: 0, minDiameterMm: 0, maxDiameterMm: 0,
+    equivalentDiameterMm: 0, centroid: { x: 0, y: 0, z: 0 },
+  };
+  if (n < 3) return result;
+
+  let cx = 0, cy = 0, cz = 0;
+  for (const p of worldPoints) { cx += p.x; cy += p.y; cz += p.z; }
+  result.centroid = { x: cx / n, y: cy / n, z: cz / n };
+
+  const basis = planeBasisMake(planeNormal);
+  const origin = toVec(result.centroid);
+  const projected = worldPoints.map(p => projectToPlaneBasis(toVec(p), origin, basis));
+
+  // Shoelace area + perimeter
+  let area = 0;
+  for (let i = 0; i < projected.length; i++) {
+    const cur = projected[i];
+    const nxt = projected[(i + 1) % projected.length];
+    area += cur.x * nxt.y - nxt.x * cur.y;
+    result.perimeterMm += Math.hypot(nxt.x - cur.x, nxt.y - cur.y);
+  }
+  result.areaMm2 = Math.abs(area) * 0.5;
+  result.equivalentDiameterMm = result.areaMm2 > 0 ? 2 * Math.sqrt(result.areaMm2 / Math.PI) : 0;
+
+  // Min/max diameter via convex hull
+  const hull = convexHull(projected);
+  if (hull.length >= 2) {
+    for (let i = 0; i < hull.length; i++) {
+      for (let j = i + 1; j < hull.length; j++) {
+        result.maxDiameterMm = Math.max(result.maxDiameterMm, Math.hypot(hull[i].x - hull[j].x, hull[i].y - hull[j].y));
+      }
+    }
+    let minD = Infinity;
+    for (let i = 0; i < hull.length; i++) {
+      const a = hull[i];
+      const b = hull[(i + 1) % hull.length];
+      const edgeLen = Math.hypot(b.x - a.x, b.y - a.y);
+      if (edgeLen < 1e-9) continue;
+      const nx = -(b.y - a.y) / edgeLen;
+      const ny = (b.x - a.x) / edgeLen;
+      let minProj = Infinity, maxProj = -Infinity;
+      for (const p of hull) {
+        const proj = p.x * nx + p.y * ny;
+        minProj = Math.min(minProj, proj);
+        maxProj = Math.max(maxProj, proj);
+      }
+      minD = Math.min(minD, maxProj - minProj);
+    }
+    result.minDiameterMm = minD === Infinity ? 0 : minD;
+  }
+
+  return result;
+}
+
+// ── Catmull-Rom Spline Interpolation ──
+
+export function catmullRom3D(
+  p0: WorldPoint3D, p1: WorldPoint3D, p2: WorldPoint3D, p3: WorldPoint3D, t: number, alpha = 0.5
+): WorldPoint3D {
+  const t2 = t * t, t3 = t2 * t;
+  const b0 = -alpha * t + 2 * alpha * t2 - alpha * t3;
+  const b1 = 1 + (alpha - 3) * t2 + (2 - alpha) * t3;
+  const b2 = alpha * t + (3 - 2 * alpha) * t2 + (alpha - 2) * t3;
+  const b3 = -alpha * t2 + alpha * t3;
+  return {
+    x: b0 * p0.x + b1 * p1.x + b2 * p2.x + b3 * p3.x,
+    y: b0 * p0.y + b1 * p1.y + b2 * p2.y + b3 * p3.y,
+    z: b0 * p0.z + b1 * p1.z + b2 * p2.z + b3 * p3.z,
+  };
+}
+
+export function smoothCenterline(controlPoints: WorldPoint3D[], segmentsPerSpan = 4): WorldPoint3D[] {
+  const n = controlPoints.length;
+  if (n < 3) return [...controlPoints];
+  const result: WorldPoint3D[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = controlPoints[Math.max(0, i - 1)];
+    const p1 = controlPoints[i];
+    const p2 = controlPoints[i + 1];
+    const p3 = controlPoints[Math.min(n - 1, i + 2)];
+    for (let s = 0; s < segmentsPerSpan; s++) {
+      result.push(catmullRom3D(p0, p1, p2, p3, s / segmentsPerSpan));
+    }
+  }
+  result.push(controlPoints[n - 1]);
+  return result;
+}
+
+export function smoothClosedContour(controlPoints: WorldPoint3D[], segmentsPerSpan = 6): WorldPoint3D[] {
+  const n = controlPoints.length;
+  if (n < 3) return [...controlPoints];
+  const result: WorldPoint3D[] = [];
+  for (let i = 0; i < n; i++) {
+    const p0 = controlPoints[(i - 1 + n) % n];
+    const p1 = controlPoints[i];
+    const p2 = controlPoints[(i + 1) % n];
+    const p3 = controlPoints[(i + 2) % n];
+    for (let s = 0; s < segmentsPerSpan; s++) {
+      result.push(catmullRom3D(p0, p1, p2, p3, s / segmentsPerSpan));
+    }
+  }
+  return result;
+}
+
+// ── Calcium Scoring (Agatston 2D) ──
+
+export function agatstonScore2D(pixelValues: ArrayLike<number>, pixelAreaMm2: number, thresholdHU = 130): number {
+  let score = 0;
+  for (let i = 0; i < pixelValues.length; i++) {
+    const val = pixelValues[i];
+    if (val >= thresholdHU) {
+      let factor = 1;
+      if (val >= 400) factor = 4;
+      else if (val >= 300) factor = 3;
+      else if (val >= 200) factor = 2;
+      score += pixelAreaMm2 * factor;
+    }
+  }
+  return score;
+}
+
 export function lerpPoint(lhs: WorldPoint3D, rhs: WorldPoint3D, t: number): WorldPoint3D {
   return {
     x: lhs.x + (rhs.x - lhs.x) * t,

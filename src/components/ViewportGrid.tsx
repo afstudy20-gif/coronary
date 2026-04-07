@@ -6,6 +6,7 @@ import {
   rotateAroundAxis as rotateAroundAxisVec3,
   type Vec3,
 } from '../coronary/QCAGeometry';
+import { OrientationOverlay } from './OrientationOverlay';
 
 type OrthoViewportName = 'axial' | 'sagittal' | 'coronal';
 type ViewportName = OrthoViewportName | 'volume3d';
@@ -735,11 +736,12 @@ export function ViewportGrid({ renderingEngineId, volumeId, setupToken }: Props)
             </div>
 
             <div className="viewport-frame">
-              <div 
-                id={viewport.id} 
-                className={`viewport-canvas viewport-mode-${presentation.mode}`} 
+              <div
+                id={viewport.id}
+                className={`viewport-canvas viewport-mode-${presentation.mode}`}
                 data-viewport-id={viewport.key}
               />
+              <OrientationOverlay viewportId={viewport.key} renderingEngineId={renderingEngineId} />
             </div>
           </section>
         );

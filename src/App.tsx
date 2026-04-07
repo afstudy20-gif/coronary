@@ -90,6 +90,9 @@ export default function App() {
     setIsLoading(true);
     setLoadingProgress(`Loading images: 0/${series.imageIds.length}`);
 
+    // Yield to let React flush the viewport grid into the DOM
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+
     let stage = 'initialization';
     try {
       stage = 'cleanupAdvancedInteractions';

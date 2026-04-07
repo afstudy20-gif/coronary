@@ -876,3 +876,120 @@ textarea {
 .breakdown-item.fibrofatty .dot { background: #ffb142; }
 .breakdown-item.fibrous .dot { background: #00BFFF; }
 
+/* ── Window/Level Presets Dropdown ── */
+
+.wl-dropdown {
+  position: relative;
+}
+
+.wl-dropdown .toolbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wl-arrow {
+  font-size: 8px;
+  opacity: 0.6;
+}
+
+.wl-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 200;
+  min-width: 200px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px;
+  margin-top: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.wl-dropdown-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 6px 10px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.wl-dropdown-item:hover {
+  background: var(--bg-panel-2);
+}
+
+.wl-dropdown-item.active {
+  background: rgba(255, 159, 104, 0.15);
+  color: var(--accent);
+}
+
+.wl-dropdown-name {
+  font-weight: 600;
+}
+
+.wl-dropdown-desc {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ── Orientation Overlay ── */
+
+.viewport-frame {
+  position: relative;
+}
+
+.orientation-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.orient-label {
+  position: absolute;
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.7);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.orient-top {
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.orient-bottom {
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.orient-left {
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.orient-right {
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.orient-cube {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+}
+

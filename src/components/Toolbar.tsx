@@ -6,6 +6,7 @@ import {
   setActiveTool,
   type ToolName,
 } from '../core/toolManager';
+import { WindowLevelPresets } from './WindowLevelPresets';
 
 const TOOLS: { name: ToolName; label: string; shortcut: string }[] = [
   { name: 'Crosshairs', label: 'Crosshairs', shortcut: 'C' },
@@ -104,6 +105,7 @@ export function Toolbar({ renderingEngineId, volumeId, onReset }: Props) {
         <span>Center</span>
         <kbd>F</kbd>
       </button>
+      <WindowLevelPresets renderingEngineId={renderingEngineId} />
       <button className="toolbar-btn danger" onClick={handleReset}>
         <span>Reset</span>
         <kbd>R</kbd>
