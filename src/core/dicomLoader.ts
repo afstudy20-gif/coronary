@@ -208,6 +208,7 @@ async function preloadAllImages(
   onProgress?: (loaded: number, total: number) => void
 ): Promise<void> {
   let loaded = 0;
+  let failed = 0;
   const total = imageIds.length;
   const chunkSize = Math.max(1, Math.ceil(imageIds.length / concurrency));
   const chunks: string[][] = [];
@@ -221,14 +222,24 @@ async function preloadAllImages(
       for (const imageId of chunk) {
         try {
           await cornerstone.imageLoader.loadAndCacheImage(imageId);
-        } catch {
-          // Skip individual image failures so the series can still load.
+        } catch (err) {
+          failed += 1;
+          if (failed <= 3) {
+            console.warn(`[DICOM] Failed to load image ${imageId}:`, err);
+          }
         }
         loaded += 1;
         onProgress?.(loaded, total);
       }
     })
   );
+
+  if (failed === total) {
+    throw new Error(`All ${total} images failed to load. Check browser console for details.`);
+  }
+  if (failed > 0) {
+    console.warn(`[DICOM] ${failed}/${total} images failed to load`);
+  }
 }
 
 export async function createVolume(
@@ -238,7 +249,18 @@ export async function createVolume(
 ): Promise<cornerstone.Types.IImageVolume> {
   await preloadAllImages(imageIds, 12, onProgress);
 
-  const volume = await cornerstone.volumeLoader.createAndCacheVolume(volumeId, { imageIds });
+  let volume: cornerstone.Types.IImageVolume;
+  try {
+    volume = await cornerstone.volumeLoader.createAndCacheVolume(volumeId, { imageIds });
+  } catch (err: any) {
+    // Common cause: SharedArrayBuffer not available (missing COOP/COEP headers)
+    const sab = typeof SharedArrayBuffer !== 'undefined';
+    throw new Error(
+      `createVolume failed: ${err?.message || err}` +
+      (!sab ? ' — SharedArrayBuffer is not available. Ensure Cross-Origin-Embedder-Policy and Cross-Origin-Opener-Policy headers are set.' : '')
+    );
+  }
+
   if ('load' in volume && typeof volume.load === 'function') {
     (volume as cornerstone.Types.IStreamingImageVolume).load();
   }
