@@ -1,9 +1,11 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --include=dev
+# Install ALL dependencies including devDependencies (vite, typescript)
+ENV NODE_ENV=development
+RUN npm ci
 COPY . .
-RUN npx vite build
+RUN npm run build
 
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
