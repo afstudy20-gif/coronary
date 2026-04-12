@@ -1,8 +1,6 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-# Install ALL dependencies including devDependencies (vite, typescript)
-ENV NODE_ENV=development
 RUN npm ci
 COPY . .
 RUN npm run build
