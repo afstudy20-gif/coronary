@@ -99,12 +99,12 @@ export function CoronaryWorkspace({ renderingEngineId, volumeId, series, resetTo
   const [version, setVersion] = useState(0);
   const [workflowStep, setWorkflowStep] = useState<WorkflowStep>('define');
   const [activeCenterlineId, setActiveCenterlineId] = useState<CoronaryVesselId>('lad');
-  const [centerlineMode, setCenterlineMode] = useState<CoronaryCenterlineMode>('draw');
+  const [centerlineMode, setCenterlineMode] = useState<CoronaryCenterlineMode>('idle');
   const [selectedPointIndex, setSelectedPointIndex] = useState<number | null>(null);
   const [snakeViewVisible, setSnakeViewVisible] = useState(false);
   const [snakeRotationDegrees, setSnakeRotationDegrees] = useState(0);
   const [status, setStatus] = useState(
-    'Select a vessel in the workflow assistant, then left click in any viewport to create or extend its centerline.'
+    'Adjust your view first, then click "Activate LAD" or pick a vessel to start drawing.'
   );
   const [branchPreset, setBranchPreset] = useState(BRANCH_PRESETS[0]);
   const [customLabel, setCustomLabel] = useState('');
@@ -164,7 +164,7 @@ export function CoronaryWorkspace({ renderingEngineId, volumeId, series, resetTo
     session.reset();
     setWorkflowStep('define');
     setActiveCenterlineId('lad');
-    setCenterlineMode('draw');
+    setCenterlineMode('idle');
     setSelectedPointIndex(null);
     setSnakeViewVisible(false);
     setSnakeRotationDegrees(0);
@@ -174,7 +174,7 @@ export function CoronaryWorkspace({ renderingEngineId, volumeId, series, resetTo
     setCursorDistanceMm(0);
     setPendingStenosisProximal(null);
     setStatus(
-      'Workspace reset. Pick LAD, LCx, RCA, Left Main, or add a branch label, then left click to draw its centerline.'
+      'Adjust your view first, then click "Activate LAD" or pick a vessel to start drawing.'
     );
     setVersion((value) => value + 1);
   }, [resetToken, session]);

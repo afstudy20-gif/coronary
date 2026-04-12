@@ -182,6 +182,14 @@ export default function App() {
       engine.renderViewports([...VIEWPORT_IDS]);
       setViewportSetupToken((value) => value + 1);
 
+      // Initialize crosshairs to volume center so all viewports start synchronised
+      stage = 'initCrosshairs';
+      try {
+        resetCrosshairsToCenter(RENDERING_ENGINE_ID, VOLUME_ID);
+      } catch {
+        // Non-fatal: crosshairs are optional
+      }
+
       advancedInteractionsCleanupRef.current = attachAdvancedInteractions(RENDERING_ENGINE_ID);
     } catch (seriesError: any) {
       console.error(`[loadSeries:${stage}]`, seriesError);

@@ -64,9 +64,9 @@ const VOLUME_VIEWPORT = {
 };
 
 const DEFAULT_PRESENTATIONS: Record<OrthoViewportName, ViewportPresentation> = {
-  axial: { mode: 'axial-slices', mipThicknessMm: 14, pivotEnabled: false },
+  axial: { mode: 'mpr', mipThicknessMm: 14, pivotEnabled: false },
   sagittal: { mode: 'mpr', mipThicknessMm: 16, pivotEnabled: false },
-  coronal: { mode: 'mip', mipThicknessMm: 16, pivotEnabled: false },
+  coronal: { mode: 'mpr', mipThicknessMm: 16, pivotEnabled: false },
 };
 
 interface Props {
@@ -166,9 +166,9 @@ export function ViewportGrid({ renderingEngineId, volumeId, setupToken }: Props)
   const dragStateRef = useRef<PivotDragState | null>(null);
   const volumeOverlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const previousModesRef = useRef<Record<OrthoViewportName, ViewMode>>({
-    axial: DEFAULT_PRESENTATIONS.axial.mode,
-    sagittal: DEFAULT_PRESENTATIONS.sagittal.mode,
-    coronal: DEFAULT_PRESENTATIONS.coronal.mode,
+    axial: 'mpr',
+    sagittal: 'mpr',
+    coronal: 'mpr',
   });
 
   const hasCenterlines = hasDefinedVessels(centerlines);
@@ -327,7 +327,11 @@ export function ViewportGrid({ renderingEngineId, volumeId, setupToken }: Props)
       const baseOrientation = viewportMap[viewportKey].orientation;
 
       if (config.mode === 'axial-slices') {
-        viewport.setOrientation(cornerstone.Enums.OrientationAxis.AXIAL);
+        // Only reset orientation on first entry, not every render — avoids
+        // resetting camera which breaks crosshair synchronisation.
+        if (previousMode !== 'axial-slices') {
+          viewport.setOrientation(cornerstone.Enums.OrientationAxis.AXIAL);
+        }
         viewport.setBlendMode(cornerstone.Enums.BlendModes.COMPOSITE);
         viewport.setSlabThickness(0.1);
       } else {

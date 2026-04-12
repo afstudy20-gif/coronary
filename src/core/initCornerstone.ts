@@ -57,6 +57,7 @@ export async function initCornerstone(): Promise<void> {
     StackScrollTool,
     LengthTool,
     ProbeTool,
+    TrackballRotateTool,
   } = cornerstoneTools;
 
   cornerstoneTools.addTool(WindowLevelTool);
@@ -66,6 +67,7 @@ export async function initCornerstone(): Promise<void> {
   cornerstoneTools.addTool(LengthTool);
   cornerstoneTools.addTool(SafeCrosshairsTool);
   cornerstoneTools.addTool(ProbeTool);
+  cornerstoneTools.addTool(TrackballRotateTool);
 
   initialized = true;
 }
@@ -79,5 +81,6 @@ export function getToolNames() {
     Length: cornerstoneTools.LengthTool.toolName,
     Crosshairs: cornerstoneTools.CrosshairsTool.toolName,
     Probe: cornerstoneTools.ProbeTool.toolName,
+    TrackballRotate: cornerstoneTools.TrackballRotateTool.toolName,
   };
 }

@@ -3,251 +3,247 @@ import * as cornerstoneTools from '@cornerstonejs/tools';
 import { getToolNames } from './initCornerstone';
 
 const MPR_TOOL_GROUP_ID = 'coronaryMprToolGroup';
+const VOL3D_TOOL_GROUP_ID = 'coronaryVol3dToolGroup';
 const MPR_VIEWPORT_IDS = ['axial', 'sagittal', 'coronal'];
 
 export type ToolName = 'Crosshairs' | 'WindowLevel' | 'Pan' | 'Zoom' | 'Length' | 'Probe';
 
 let mprToolGroup: cornerstoneTools.Types.IToolGroup | undefined;
+let vol3dToolGroup: cornerstoneTools.Types.IToolGroup | undefined;
 let voiSync: cornerstoneTools.Synchronizer | undefined;
 let zoomPanSync: cornerstoneTools.Synchronizer | undefined;
 
 export function setupToolGroups(renderingEngineId: string): void {
-  if (mprToolGroup) {
-    return;
-  }
+  if (mprToolGroup) return;
 
   const names = getToolNames();
-  let step = 'createToolGroup';
 
-  try {
-    let group = cornerstoneTools.ToolGroupManager.createToolGroup(MPR_TOOL_GROUP_ID);
-    if (!group) {
-      step = 'destroyStaleToolGroup';
-      cornerstoneTools.ToolGroupManager.destroyToolGroup(MPR_TOOL_GROUP_ID);
-      step = 'recreateToolGroup';
-      group = cornerstoneTools.ToolGroupManager.createToolGroup(MPR_TOOL_GROUP_ID);
+  // === MPR Tool Group ===
+  let group = cornerstoneTools.ToolGroupManager.createToolGroup(MPR_TOOL_GROUP_ID);
+  if (!group) {
+    cornerstoneTools.ToolGroupManager.destroyToolGroup(MPR_TOOL_GROUP_ID);
+    group = cornerstoneTools.ToolGroupManager.createToolGroup(MPR_TOOL_GROUP_ID);
+  }
+  if (!group) throw new Error('Failed to create coronary MPR tool group');
+
+  group.addTool(names.WindowLevel);
+  group.addTool(names.Pan);
+  group.addTool(names.Zoom);
+  group.addTool(names.StackScroll);
+  group.addTool(names.Length);
+  group.addTool(names.Probe);
+  group.addTool(names.Crosshairs, {
+    getReferenceLineColor: (viewportId: string) => {
+      const colors: Record<string, string> = {
+        axial: 'rgb(255, 135, 91)',
+        sagittal: 'rgb(97, 219, 251)',
+        coronal: 'rgb(255, 209, 102)',
+      };
+      return colors[viewportId] || 'rgb(200, 200, 200)';
+    },
+    getReferenceLineControllable: () => true,
+    getReferenceLineDraggableRotatable: () => true,
+    getReferenceLineSlabThicknessControlsOn: () => false,
+  });
+
+  // IMPORTANT: Add viewports BEFORE setting tools active.
+  // CrosshairsTool.onSetToolActive() calls _computeToolCenter() which
+  // requires >= 2 viewports to exist, otherwise it silently exits.
+  for (const vpId of MPR_VIEWPORT_IDS) {
+    group.addViewport(vpId, renderingEngineId);
+  }
+
+  // Crosshairs on primary click — activated FIRST so it sees all 3 viewports
+  group.setToolActive(names.Crosshairs, {
+    bindings: [{ mouseButton: cornerstoneTools.Enums.MouseBindings.Primary }],
+  });
+
+  // Pan on middle-click + Shift+click
+  group.setToolActive(names.Pan, {
+    bindings: [
+      { mouseButton: cornerstoneTools.Enums.MouseBindings.Auxiliary },
+      { mouseButton: cornerstoneTools.Enums.MouseBindings.Primary, modifierKey: cornerstoneTools.Enums.KeyboardBindings.Shift },
+    ],
+  });
+
+  // Zoom on right-click
+  group.setToolActive(names.Zoom, {
+    bindings: [{ mouseButton: cornerstoneTools.Enums.MouseBindings.Secondary }],
+  });
+
+  // Scroll on wheel
+  group.setToolActive(names.StackScroll, {
+    bindings: [{ mouseButton: cornerstoneTools.Enums.MouseBindings.Wheel }],
+  });
+
+  mprToolGroup = group;
+
+  // === 3D Volume Tool Group ===
+  let vol3dGroup = cornerstoneTools.ToolGroupManager.createToolGroup(VOL3D_TOOL_GROUP_ID);
+  if (!vol3dGroup) {
+    cornerstoneTools.ToolGroupManager.destroyToolGroup(VOL3D_TOOL_GROUP_ID);
+    vol3dGroup = cornerstoneTools.ToolGroupManager.createToolGroup(VOL3D_TOOL_GROUP_ID);
+  }
+  if (vol3dGroup) {
+    vol3dGroup.addTool(names.Pan);
+    vol3dGroup.addTool(names.Zoom);
+    if (names.TrackballRotate) {
+      vol3dGroup.addTool(names.TrackballRotate);
+      vol3dGroup.addViewport('volume3d', renderingEngineId);
+      vol3dGroup.setToolActive(names.TrackballRotate, {
+        bindings: [{ mouseButton: cornerstoneTools.Enums.MouseBindings.Primary }],
+      });
+    } else {
+      vol3dGroup.addViewport('volume3d', renderingEngineId);
     }
-    if (!group) {
-      throw new Error('Failed to create coronary MPR tool group');
-    }
-
-    step = 'addTool:WindowLevel';
-    group.addTool(names.WindowLevel);
-    step = 'addTool:Pan';
-    group.addTool(names.Pan);
-    step = 'addTool:Zoom';
-    group.addTool(names.Zoom);
-    step = 'addTool:StackScroll';
-    group.addTool(names.StackScroll);
-    step = 'addTool:Length';
-    group.addTool(names.Length);
-    step = 'addTool:Probe';
-    group.addTool(names.Probe);
-    step = 'addTool:Crosshairs';
-    group.addTool(names.Crosshairs, {
-      getReferenceLineColor: (viewportId: string) => {
-        const colors: Record<string, string> = {
-          axial: 'rgb(255, 135, 91)',
-          sagittal: 'rgb(97, 219, 251)',
-          coronal: 'rgb(255, 209, 102)',
-        };
-        return colors[viewportId] || 'rgb(200, 200, 200)';
-      },
-      getReferenceLineControllable: () => true,
-      getReferenceLineDraggableRotatable: () => true,
-      getReferenceLineSlabThicknessControlsOn: () => false,
-    });
-
-    for (const viewportId of MPR_VIEWPORT_IDS) {
-      step = `addViewport:${viewportId}`;
-      group.addViewport(viewportId, renderingEngineId);
-    }
-
-    step = 'setToolActive:WindowLevel';
-    group.setToolActive(names.WindowLevel, {
-      bindings: [{ mouseButton: cornerstoneTools.Enums.MouseBindings.Primary }],
-    });
-    
-    step = 'setToolActive:Pan';
-    group.setToolActive(names.Pan, {
+    vol3dGroup.setToolActive(names.Pan, {
       bindings: [
-        { mouseButton: cornerstoneTools.Enums.MouseBindings.Secondary }, // Right-Click to Pan
+        { mouseButton: cornerstoneTools.Enums.MouseBindings.Auxiliary },
+        { mouseButton: cornerstoneTools.Enums.MouseBindings.Primary, modifierKey: cornerstoneTools.Enums.KeyboardBindings.Shift },
       ],
     });
-    
-    step = 'setToolActive:Zoom';
-    group.setToolActive(names.Zoom, {
-      bindings: [
-        { mouseButton: cornerstoneTools.Enums.MouseBindings.Auxiliary }, // Middle-Click to Zoom
-      ],
+    vol3dGroup.setToolActive(names.Zoom, {
+      bindings: [{ mouseButton: cornerstoneTools.Enums.MouseBindings.Secondary }],
     });
-    
-    step = 'setToolActive:StackScroll';
-    group.setToolActive(names.StackScroll, {
-      bindings: [
-        { mouseButton: cornerstoneTools.Enums.MouseBindings.Wheel },
-        // 'Razor Blade' Slicing: Right + Middle + Scroll
-        { 
-          mouseButton: (cornerstoneTools.Enums.MouseBindings.Secondary as any) | (cornerstoneTools.Enums.MouseBindings.Auxiliary as any) 
-        }
-      ],
-    });
+    vol3dToolGroup = vol3dGroup;
+  }
 
-    step = 'createZoomPanSynchronizer';
-    zoomPanSync = cornerstoneTools.synchronizers.createZoomPanSynchronizer('coronaryZoomPanSync');
-    step = 'createVoiSynchronizer';
-    voiSync = cornerstoneTools.synchronizers.createVOISynchronizer('coronaryVoiSync', {
-      syncInvertState: false,
-      syncColormap: false,
-    });
+  // === Synchronizers ===
+  zoomPanSync = cornerstoneTools.synchronizers.createZoomPanSynchronizer('coronaryZoomPanSync');
+  voiSync = cornerstoneTools.synchronizers.createVOISynchronizer('coronaryVoiSync', {
+    syncInvertState: false,
+    syncColormap: false,
+  });
 
-    for (const viewportId of MPR_VIEWPORT_IDS) {
-      step = `zoomPanSync:add:${viewportId}`;
-      zoomPanSync.add({ renderingEngineId, viewportId });
-      step = `zoomPanSync:setOptions:${viewportId}`;
-      zoomPanSync.setOptions(viewportId, { syncPan: false });
-      step = `voiSync:add:${viewportId}`;
-      voiSync.add({ renderingEngineId, viewportId });
-    }
-
-    mprToolGroup = group;
-  } catch (error: any) {
-    throw new Error(`setupToolGroups:${step}: ${error?.message || String(error)}`);
+  for (const vpId of MPR_VIEWPORT_IDS) {
+    zoomPanSync.add({ renderingEngineId, viewportId: vpId });
+    zoomPanSync.setOptions(vpId, { syncPan: false });
+    voiSync.add({ renderingEngineId, viewportId: vpId });
   }
 }
 
 export function setActiveTool(name: ToolName): void {
-  if (!mprToolGroup) {
-    return;
-  }
+  if (!mprToolGroup) return;
 
   const names = getToolNames();
   const selectedTool = names[name];
-  const primaryTools = [
-    names.Crosshairs,
-    names.WindowLevel,
-    names.Length,
-    names.Probe,
-    names.Pan,
-    names.Zoom,
+  if (!selectedTool) return;
+
+  // Drawing tools (Probe) need Crosshairs fully disabled because Passive
+  // crosshairs can intercept clicks near existing annotations.
+  const isDrawingTool = name === 'Probe';
+  const allPrimaryTools = [
+    names.WindowLevel, names.Length, names.Crosshairs,
+    names.Probe, names.Pan, names.Zoom,
   ];
 
-  for (const toolName of primaryTools) {
-    if (toolName === names.Crosshairs && name === 'Probe') {
-      mprToolGroup.setToolDisabled(toolName);
+  for (const t of allPrimaryTools) {
+    if (t === names.Crosshairs && name !== 'Crosshairs') {
+      if (isDrawingTool) {
+        mprToolGroup.setToolDisabled(t);
+      } else {
+        mprToolGroup.setToolEnabled(t);
+      }
     } else {
-      mprToolGroup.setToolPassive(toolName);
+      mprToolGroup.setToolPassive(t);
     }
   }
 
+  // Activate the selected tool on Primary click
   mprToolGroup.setToolActive(selectedTool, {
     bindings: [{ mouseButton: cornerstoneTools.Enums.MouseBindings.Primary }],
   });
 
+  // Re-activate Pan on middle-click + Shift+click
   if (name !== 'Pan') {
     mprToolGroup.setToolActive(names.Pan, {
       bindings: [
-        { mouseButton: cornerstoneTools.Enums.MouseBindings.Secondary },
+        { mouseButton: cornerstoneTools.Enums.MouseBindings.Auxiliary },
+        { mouseButton: cornerstoneTools.Enums.MouseBindings.Primary, modifierKey: cornerstoneTools.Enums.KeyboardBindings.Shift },
       ],
     });
   }
 
+  // Re-activate Zoom on right-click
   if (name !== 'Zoom') {
     mprToolGroup.setToolActive(names.Zoom, {
-      bindings: [
-        { mouseButton: cornerstoneTools.Enums.MouseBindings.Auxiliary },
-      ],
+      bindings: [{ mouseButton: cornerstoneTools.Enums.MouseBindings.Secondary }],
     });
   }
 
+  // Scroll always on wheel
   mprToolGroup.setToolActive(names.StackScroll, {
-    bindings: [
-      { mouseButton: cornerstoneTools.Enums.MouseBindings.Wheel },
-      { 
-        mouseButton: (cornerstoneTools.Enums.MouseBindings.Secondary as any) | (cornerstoneTools.Enums.MouseBindings.Auxiliary as any) 
-      }
-    ],
+    bindings: [{ mouseButton: cornerstoneTools.Enums.MouseBindings.Wheel }],
   });
 }
 
 export function centerViewportsOnCrosshairs(renderingEngineId: string): void {
-  if (!mprToolGroup) {
-    return;
-  }
+  if (!mprToolGroup) return;
 
   const engine = cornerstone.getRenderingEngine(renderingEngineId);
-  if (!engine) {
-    return;
-  }
+  if (!engine) return;
 
   const names = getToolNames();
-  const tool = mprToolGroup.getToolInstance(names.Crosshairs) as any;
-  let center = tool?.toolCenter as cornerstone.Types.Point3 | undefined;
+  let center: cornerstone.Types.Point3 | null = null;
 
+  const csTool = mprToolGroup.getToolInstance(names.Crosshairs) as any;
+  if (csTool?.toolCenter) {
+    center = csTool.toolCenter as cornerstone.Types.Point3;
+  }
+
+  // Fallback: read from annotation
   if (!center) {
-    for (const viewportId of MPR_VIEWPORT_IDS) {
-      const viewport = engine.getViewport(viewportId);
-      if (!viewport?.element) {
-        continue;
-      }
-      const annotations = cornerstoneTools.annotation.state.getAnnotations(names.Crosshairs, viewport.element);
-      const annotationCenter = annotations?.[0]?.data?.handles?.toolCenter;
-      if (annotationCenter) {
-        center = annotationCenter as cornerstone.Types.Point3;
-        break;
+    for (const vpId of MPR_VIEWPORT_IDS) {
+      const vp = engine.getViewport(vpId);
+      if (!vp?.element) continue;
+      const anns = cornerstoneTools.annotation.state.getAnnotations(names.Crosshairs, vp.element);
+      if (anns?.length > 0) {
+        const tc = anns[0].data?.handles?.toolCenter;
+        if (tc) { center = tc as cornerstone.Types.Point3; break; }
       }
     }
   }
 
-  if (!center) {
-    return;
-  }
+  if (!center) return;
 
-  for (const viewportId of MPR_VIEWPORT_IDS) {
-    const viewport = engine.getViewport(viewportId);
-    if (!viewport) {
-      continue;
-    }
+  for (const vpId of MPR_VIEWPORT_IDS) {
+    const vp = engine.getViewport(vpId);
+    if (!vp) continue;
+    const cam = vp.getCamera();
+    if (!cam.viewPlaneNormal || !cam.focalPoint) continue;
 
-    const camera = viewport.getCamera();
-    const normal = camera.viewPlaneNormal || [0, 0, 1];
-    const distance =
-      camera.position && camera.focalPoint
-        ? Math.hypot(
-            camera.position[0] - camera.focalPoint[0],
-            camera.position[1] - camera.focalPoint[1],
-            camera.position[2] - camera.focalPoint[2]
-          )
-        : 1000;
+    const vpn = cam.viewPlaneNormal;
+    const dist = cam.position && cam.focalPoint
+      ? Math.hypot(
+          cam.position[0] - cam.focalPoint[0],
+          cam.position[1] - cam.focalPoint[1],
+          cam.position[2] - cam.focalPoint[2]
+        )
+      : 1000;
 
-    viewport.setCamera({
+    vp.setCamera({
       focalPoint: center,
       position: [
-        center[0] + normal[0] * distance,
-        center[1] + normal[1] * distance,
-        center[2] + normal[2] * distance,
+        center[0] + vpn[0] * dist,
+        center[1] + vpn[1] * dist,
+        center[2] + vpn[2] * dist,
       ] as cornerstone.Types.Point3,
     });
-    viewport.render();
+    vp.render();
   }
 }
 
 export function resetCrosshairsToCenter(renderingEngineId: string, volumeId: string): void {
-  if (!mprToolGroup) {
-    return;
-  }
+  if (!mprToolGroup) return;
 
   const engine = cornerstone.getRenderingEngine(renderingEngineId);
-  if (!engine) {
-    return;
-  }
+  if (!engine) return;
 
   const names = getToolNames();
   const crosshairsTool = mprToolGroup.getToolInstance(names.Crosshairs) as any;
-  if (!crosshairsTool) {
-    return;
-  }
+  if (!crosshairsTool) return;
 
+  // Compute volume center from image data bounds
   let volumeCenter: number[] | null = null;
   const volume = cornerstone.cache.getVolume(volumeId);
   const bounds = (volume as any)?.imageData?.getBounds?.();
@@ -259,71 +255,89 @@ export function resetCrosshairsToCenter(renderingEngineId: string, volumeId: str
     ];
   }
 
+  // Fallback: average all viewport focal points
   if (!volumeCenter) {
     const focalPoints = MPR_VIEWPORT_IDS
-      .map((viewportId) => engine.getViewport(viewportId)?.getCamera()?.focalPoint)
+      .map((vpId) => engine.getViewport(vpId)?.getCamera()?.focalPoint)
       .filter(Boolean) as cornerstone.Types.Point3[];
     if (focalPoints.length > 0) {
       volumeCenter = [
-        focalPoints.reduce((sum, point) => sum + point[0], 0) / focalPoints.length,
-        focalPoints.reduce((sum, point) => sum + point[1], 0) / focalPoints.length,
-        focalPoints.reduce((sum, point) => sum + point[2], 0) / focalPoints.length,
+        focalPoints.reduce((s, p) => s + p[0], 0) / focalPoints.length,
+        focalPoints.reduce((s, p) => s + p[1], 0) / focalPoints.length,
+        focalPoints.reduce((s, p) => s + p[2], 0) / focalPoints.length,
       ];
     }
   }
 
-  if (!volumeCenter) {
-    return;
-  }
+  if (!volumeCenter) return;
 
-  for (const viewportId of MPR_VIEWPORT_IDS) {
-    const viewport = engine.getViewport(viewportId);
-    if (!viewport) {
-      continue;
-    }
-    const camera = viewport.getCamera();
-    const normal = camera.viewPlaneNormal || [0, 0, 1];
-    const distance =
-      camera.position && camera.focalPoint
-        ? Math.hypot(
-            camera.position[0] - camera.focalPoint[0],
-            camera.position[1] - camera.focalPoint[1],
-            camera.position[2] - camera.focalPoint[2]
-          )
-        : 1000;
-
-    viewport.setCamera({
+  // Set each viewport's camera focal point to the volume center
+  for (const vpId of MPR_VIEWPORT_IDS) {
+    const vp = engine.getViewport(vpId);
+    if (!vp) continue;
+    const cam = vp.getCamera();
+    const vpn = cam.viewPlaneNormal || [0, 0, 1];
+    const dist = cam.position && cam.focalPoint
+      ? Math.hypot(
+          cam.position[0] - cam.focalPoint[0],
+          cam.position[1] - cam.focalPoint[1],
+          cam.position[2] - cam.focalPoint[2]
+        )
+      : 1000;
+    vp.setCamera({
       focalPoint: volumeCenter as cornerstone.Types.Point3,
       position: [
-        volumeCenter[0] + normal[0] * distance,
-        volumeCenter[1] + normal[1] * distance,
-        volumeCenter[2] + normal[2] * distance,
+        volumeCenter[0] + vpn[0] * dist,
+        volumeCenter[1] + vpn[1] * dist,
+        volumeCenter[2] + vpn[2] * dist,
       ] as cornerstone.Types.Point3,
     });
   }
 
-  for (const viewportId of MPR_VIEWPORT_IDS) {
+  // Initialize crosshairs annotation for each viewport
+  for (const vpId of MPR_VIEWPORT_IDS) {
     try {
-      crosshairsTool.initializeViewport({ renderingEngineId, viewportId });
+      crosshairsTool.initializeViewport({ renderingEngineId, viewportId: vpId });
     } catch {
-      // Ignore repeat initialization.
+      // ignore if already initialized
     }
   }
 
+  // Set the shared tool center so all crosshairs converge at the same point
   crosshairsTool.toolCenter = [...volumeCenter];
+
+  // Also update toolCenter on each viewport's crosshair annotation
+  for (const vpId of MPR_VIEWPORT_IDS) {
+    const vp = engine.getViewport(vpId);
+    if (!vp?.element) continue;
+    const anns = cornerstoneTools.annotation.state.getAnnotations(names.Crosshairs, vp.element);
+    if (anns) {
+      for (const ann of anns) {
+        if (ann.data?.handles) {
+          ann.data.handles.toolCenter = [...volumeCenter] as cornerstone.Types.Point3;
+        }
+      }
+    }
+  }
+
+  // Recompute reference lines from the updated center
+  if (typeof crosshairsTool.computeToolCenter === 'function') {
+    crosshairsTool.computeToolCenter();
+  }
+
   engine.renderViewports(MPR_VIEWPORT_IDS);
 }
 
 /**
- * Attaches advanced clinical interaction listeners for Phase 11.
- * Supports: Ctrl + Middle + Wheel -> Dynamic Slab Thickness
+ * Attaches advanced clinical interaction listeners.
+ * Ctrl + Middle + Wheel -> Dynamic Slab Thickness
  */
 export function attachAdvancedInteractions(renderingEngineId: string): () => void {
   const engine = cornerstone.getRenderingEngine(renderingEngineId);
   if (!engine) return () => {};
 
   const handleWheel = (evt: WheelEvent) => {
-    if (!evt.ctrlKey || !(evt.buttons & 4)) return; // Ctrl + Middle Button
+    if (!evt.ctrlKey || !(evt.buttons & 4)) return;
     evt.preventDefault();
     evt.stopPropagation();
 
@@ -335,24 +349,10 @@ export function attachAdvancedInteractions(renderingEngineId: string): () => voi
     if (!viewport) return;
 
     const delta = evt.deltaY > 0 ? 1 : -1;
-    const actors = viewport.getActors();
-    
-    actors.forEach(actor => {
-      if (actor.uid.includes('coronaryVolume')) {
-         const currentSlab = (viewport as any).getSlabThickness?.() || 0;
-         const nextSlab = Math.max(0, currentSlab + delta * 2);
-         viewport.setSlabThickness(nextSlab);
-         viewport.render();
-      }
-    });
-
-    // Also update Crosshairs tool if active
-    if (mprToolGroup) {
-      const crosshairsTool = mprToolGroup.getToolInstance(getToolNames().Crosshairs) as any;
-      if (crosshairsTool) {
-        // Force crosshairs to re-render or update its own thickness if needed
-      }
-    }
+    const currentSlab = (viewport as any).getSlabThickness?.() || 0;
+    const nextSlab = Math.max(0, currentSlab + delta * 2);
+    viewport.setSlabThickness(nextSlab);
+    viewport.render();
   };
 
   const viewports = MPR_VIEWPORT_IDS.map(id => document.getElementById(`viewport-${id}`));
@@ -372,14 +372,16 @@ export function destroyToolGroups(): void {
     cornerstoneTools.SynchronizerManager.destroySynchronizer(zoomPanSync.id);
     zoomPanSync = undefined;
   }
-
   if (voiSync) {
     cornerstoneTools.SynchronizerManager.destroySynchronizer(voiSync.id);
     voiSync = undefined;
   }
-
   if (mprToolGroup) {
     cornerstoneTools.ToolGroupManager.destroyToolGroup(MPR_TOOL_GROUP_ID);
     mprToolGroup = undefined;
+  }
+  if (vol3dToolGroup) {
+    cornerstoneTools.ToolGroupManager.destroyToolGroup(VOL3D_TOOL_GROUP_ID);
+    vol3dToolGroup = undefined;
   }
 }
