@@ -91,16 +91,16 @@ interface Props {
   };
 }
 
-const SNAKE_CANVAS_HEIGHT = 180;
-const PERPENDICULAR_CANVAS_SIZE = 196;
+const SNAKE_CANVAS_HEIGHT = 360;
+const PERPENDICULAR_CANVAS_SIZE = 300;
 const HIT_RADIUS = 10;
 const SEGMENT_HIT_DISTANCE = 8;
-const VOI_LOWER = -200;
-const VOI_UPPER = 900;
-const SNAKE_SLAB_HALF_WIDTH_MM = 1.6;
-const SNAKE_SLAB_SAMPLES = 5;
-const PERPENDICULAR_TANGENT_HALF_WIDTH_MM = 1.5;
-const PERPENDICULAR_TANGENT_SAMPLES = 5;
+const VOI_LOWER = 0;
+const VOI_UPPER = 700;
+const SNAKE_SLAB_HALF_WIDTH_MM = 2.5;
+const SNAKE_SLAB_SAMPLES = 7;
+const PERPENDICULAR_TANGENT_HALF_WIDTH_MM = 2.0;
+const PERPENDICULAR_TANGENT_SAMPLES = 7;
 
 interface VolumeContext {
   imageData: any;
@@ -197,7 +197,7 @@ function buildSnakeLayout(
 
   const minX = Math.min(...flattened.map((point) => point.x));
   const maxX = Math.max(...flattened.map((point) => point.x));
-  const maxAbsY = Math.max(6, ...flattened.map((point) => Math.abs(point.y)));
+  const maxAbsY = Math.max(14, ...flattened.map((point) => Math.abs(point.y)));
   const scaleX = (width - margin * 2) / Math.max(12, maxX - minX || 12);
   const scaleY = Math.min((height - 34) / (maxAbsY * 2), Math.max(scaleX * 0.65, 1));
   const centerY = height / 2;
@@ -275,7 +275,7 @@ function buildPerpendicularLayout(
     };
   });
   const maxAbs = Math.max(
-    8,
+    18,
     ...projected.flatMap((point) => [Math.abs(point.x), Math.abs(point.y)])
   );
   const scaleFactor = (Math.min(width, height) / 2 - 22) / maxAbs;
@@ -462,7 +462,7 @@ function intensityToGray(value: number, mode: SnakeViewMode): number {
   const lower = mode === 'calcifications' ? 130 : VOI_LOWER;
   const upper = mode === 'calcifications' ? 1000 : VOI_UPPER;
   const normalized = clamp((value - lower) / (upper - lower), 0, 1);
-  return Math.round(Math.pow(normalized, 0.82) * 255);
+  return Math.round(Math.pow(normalized, 0.75) * 255);
 }
 
 function drawGrayscaleImage(
