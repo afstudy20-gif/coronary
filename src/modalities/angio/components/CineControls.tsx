@@ -1,0 +1,232 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import * as cornerstone from '@cornerstonejs/core';
+
+interface Props {
+  renderingEngineId: string;
+  viewportId: string;
+  imageCount: number;
+  currentIndex: number;
+  onFrameChange: (index: number) => void;
+  seriesIndex?: number;
+  seriesCount?: number;
+  onPrevSeries?: () => void;
+  onNextSeries?: () => void;
+}
+
+export function CineControls({ renderingEngineId, viewportId, imageCount, currentIndex, onFrameChange, seriesIndex, seriesCount, onPrevSeries, onNextSeries }: Props) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [fps, setFps] = useState(15);
+  const [loop, setLoop] = useState(true);
+  const rafRef = useRef<number>(0);
+  const lastTimeRef = useRef<number>(0);
+  const frameIndexRef = useRef(currentIndex);
+
+  useEffect(() => {
+    frameIndexRef.current = currentIndex;
+  }, [currentIndex]);
+
+  const goToFrame = useCallback((index: number) => {
+    const engine = cornerstone.getRenderingEngine(renderingEngineId);
+    if (!engine) return;
+
+    const viewport = engine.getViewport(viewportId) as cornerstone.Types.IStackViewport | undefined;
+    if (!viewport) return;
+
+    const clampedIndex = Math.max(0, Math.min(imageCount - 1, index));
+    viewport.setImageIdIndex(clampedIndex);
+    onFrameChange(clampedIndex);
+  }, [renderingEngineId, viewportId, imageCount, onFrameChange]);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      return;
+    }
+
+    const interval = 1000 / fps;
+
+    const animate = (time: number) => {
+      if (time - lastTimeRef.current >= interval) {
+        lastTimeRef.current = time;
+        let next = frameIndexRef.current + 1;
+        if (next >= imageCount) {
+          if (loop) {
+            next = 0;
+          } else {
+            setIsPlaying(false);
+            return;
+          }
+        }
+        goToFrame(next);
+      }
+      rafRef.current = requestAnimationFrame(animate);
+    };
+
+    lastTimeRef.current = performance.now();
+    rafRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [isPlaying, fps, loop, imageCount, goToFrame]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    function handleKeydown(event: KeyboardEvent) {
+      if (
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement ||
+        event.target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+
+      if (event.key === ' ') {
+        event.preventDefault();
+        setIsPlaying((p) => !p);
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        setIsPlaying(false);
+        goToFrame(frameIndexRef.current + 1);
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        setIsPlaying(false);
+        goToFrame(frameIndexRef.current - 1);
+      } else if (event.key === 'Home') {
+        event.preventDefault();
+        setIsPlaying(false);
+        goToFrame(0);
+      } else if (event.key === 'End') {
+        event.preventDefault();
+        setIsPlaying(false);
+        goToFrame(imageCount - 1);
+      } else if (event.key === 'PageUp') {
+        event.preventDefault();
+        setIsPlaying(false);
+        onPrevSeries?.();
+      } else if (event.key === 'PageDown') {
+        event.preventDefault();
+        setIsPlaying(false);
+        onNextSeries?.();
+      }
+    }
+
+    window.addEventListener('keydown', handleKeydown);
+    return () => window.removeEventListener('keydown', handleKeydown);
+  }, [goToFrame, imageCount]);
+
+  if (imageCount <= 1) return null;
+
+  return (
+    <div className="cine-controls">
+      <div className="cine-row">
+        <button
+          className="cine-btn"
+          onClick={() => goToFrame(0)}
+          title="First frame (Home)"
+        >
+          &#x23EE;
+        </button>
+        <button
+          className="cine-btn"
+          onClick={() => { setIsPlaying(false); goToFrame(currentIndex - 1); }}
+          title="Previous frame (Left arrow)"
+        >
+          &#x23F4;
+        </button>
+        <button
+          className={`cine-btn cine-play ${isPlaying ? 'active' : ''}`}
+          onClick={() => setIsPlaying(!isPlaying)}
+          title="Play / Pause (Space)"
+        >
+          {isPlaying ? '\u23F8' : '\u23F5'}
+        </button>
+        <button
+          className="cine-btn"
+          onClick={() => { setIsPlaying(false); goToFrame(currentIndex + 1); }}
+          title="Next frame (Right arrow)"
+        >
+          &#x23F5;&#xFE0E;
+        </button>
+        <button
+          className="cine-btn"
+          onClick={() => goToFrame(imageCount - 1)}
+          title="Last frame (End)"
+        >
+          &#x23ED;
+        </button>
+
+        <span className="cine-frame-label">
+          {currentIndex + 1} / {imageCount}
+        </span>
+
+        <div className="cine-fps-group">
+          {[7.5, 15, 30].map((preset) => (
+            <button
+              key={preset}
+              className={`cine-fps-preset ${fps === preset ? 'active' : ''}`}
+              onClick={() => setFps(preset)}
+              title={`${preset} FPS`}
+            >
+              {preset}
+            </button>
+          ))}
+          <input
+            type="number"
+            min="1"
+            max="60"
+            step="0.5"
+            value={fps}
+            onChange={(e) => setFps(Math.max(1, Math.min(60, Number(e.target.value) || 15)))}
+            className="cine-fps-input"
+          />
+        </div>
+
+        <button
+          className={`cine-btn cine-loop ${loop ? 'active' : ''}`}
+          onClick={() => setLoop(!loop)}
+          title="Toggle loop"
+        >
+          &#x1F501;
+        </button>
+
+        {onPrevSeries && onNextSeries && seriesCount != null && seriesCount > 1 && (
+          <>
+            <span className="cine-separator" />
+            <button
+              className="cine-btn cine-series"
+              onClick={onPrevSeries}
+              disabled={seriesIndex === 0}
+              title="Previous series (PageUp)"
+            >
+              &#x25C0;&#xFE0E;
+            </button>
+            <span className="cine-series-label">
+              {(seriesIndex ?? 0) + 1}/{seriesCount}
+            </span>
+            <button
+              className="cine-btn cine-series"
+              onClick={onNextSeries}
+              disabled={seriesIndex === seriesCount - 1}
+              title="Next series (PageDown)"
+            >
+              &#x25B6;&#xFE0E;
+            </button>
+          </>
+        )}
+      </div>
+
+      <input
+        type="range"
+        className="cine-slider"
+        min="0"
+        max={imageCount - 1}
+        value={currentIndex}
+        onChange={(e) => {
+          setIsPlaying(false);
+          goToFrame(Number(e.target.value));
+        }}
+      />
+    </div>
+  );
+}

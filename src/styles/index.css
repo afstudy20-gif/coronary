@@ -995,3 +995,89 @@ textarea {
   right: 4px;
 }
 
+/* ── Modality Picker ── */
+
+.modality-picker-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 40px;
+}
+
+.modality-picker {
+  max-width: 1000px;
+  width: 100%;
+}
+
+.modality-picker-header {
+  text-align: center;
+  margin-bottom: 36px;
+}
+
+.modality-picker-header h1 {
+  margin: 6px 0 10px 0;
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.modality-picker-header .mini-copy {
+  max-width: 520px;
+  margin: 0 auto;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.modality-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 24px;
+}
+
+.modality-card {
+  text-align: left;
+  padding: 28px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at top right, rgba(255, 159, 104, 0.08), transparent 30%),
+    linear-gradient(180deg, rgba(18, 28, 40, 0.95), rgba(10, 17, 25, 0.98));
+  color: var(--text);
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  box-shadow: var(--shadow);
+}
+
+.modality-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+  box-shadow: 0 12px 32px rgba(255, 159, 104, 0.15);
+}
+
+.modality-card-tag {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  background: rgba(255, 159, 104, 0.18);
+  color: var(--accent);
+  margin-bottom: 14px;
+}
+
+.modality-card h2 {
+  margin: 0 0 10px 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.modality-card p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
