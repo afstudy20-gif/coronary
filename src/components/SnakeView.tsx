@@ -97,10 +97,10 @@ const HIT_RADIUS = 10;
 const SEGMENT_HIT_DISTANCE = 8;
 const VOI_LOWER = 0;
 const VOI_UPPER = 700;
-const SNAKE_SLAB_HALF_WIDTH_MM = 2.5;
-const SNAKE_SLAB_SAMPLES = 7;
-const PERPENDICULAR_TANGENT_HALF_WIDTH_MM = 2.0;
-const PERPENDICULAR_TANGENT_SAMPLES = 7;
+const SNAKE_SLAB_HALF_WIDTH_MM = 1.0;
+const SNAKE_SLAB_SAMPLES = 9;
+const PERPENDICULAR_TANGENT_HALF_WIDTH_MM = 0.8;
+const PERPENDICULAR_TANGENT_SAMPLES = 9;
 
 interface VolumeContext {
   imageData: any;
@@ -504,6 +504,30 @@ function sampleSlabMax(
   return best;
 }
 
+function sampleSlabAverage(
+  volume: VolumeContext,
+  origin: Vec3,
+  axis: Vec3,
+  halfWidthMm: number,
+  steps: number
+): number {
+  if (steps <= 1 || halfWidthMm <= 0) {
+    return sampleVoxelTrilinear(volume, origin);
+  }
+
+  let sum = 0;
+  let count = 0;
+  for (let step = 0; step < steps; step += 1) {
+    const t = steps === 1 ? 0 : step / (steps - 1);
+    const offset = -halfWidthMm + t * halfWidthMm * 2;
+    const world = add(origin, scale(axis, offset));
+    const v = sampleVoxelTrilinear(volume, world);
+    sum += v;
+    count += 1;
+  }
+  return count > 0 ? sum / count : VOI_LOWER;
+}
+
 function intensityToGray(value: number, mode: SnakeViewMode): number {
   const lower = mode === 'calcifications' ? 130 : VOI_LOWER;
   const upper = mode === 'calcifications' ? 1000 : VOI_UPPER;
@@ -513,24 +537,37 @@ function intensityToGray(value: number, mode: SnakeViewMode): number {
 
 function drawGrayscaleImage(
   ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
+  cssWidth: number,
+  cssHeight: number,
   viewMode: SnakeViewMode,
+  /** sample at CSS-pixel coords (x,y) */
   sampleValue: (x: number, y: number) => number
 ) {
-  const imageData = ctx.createImageData(width, height);
+  const canvas = ctx.canvas;
+  const devW = canvas.width;
+  const devH = canvas.height;
+  const scaleX = cssWidth / devW;
+  const scaleY = cssHeight / devH;
+  // Write directly into device backing store pixels for maximum sharpness.
+  const imageData = ctx.createImageData(devW, devH);
   const pixels = imageData.data;
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const gray = intensityToGray(sampleValue(x, y), viewMode);
-      const offset = (y * width + x) * 4;
+  for (let dy = 0; dy < devH; dy += 1) {
+    const cy = (dy + 0.5) * scaleY;
+    for (let dx = 0; dx < devW; dx += 1) {
+      const cx = (dx + 0.5) * scaleX;
+      const gray = intensityToGray(sampleValue(cx, cy), viewMode);
+      const offset = (dy * devW + dx) * 4;
       pixels[offset] = gray;
       pixels[offset + 1] = gray;
       pixels[offset + 2] = gray;
       pixels[offset + 3] = 255;
     }
   }
+  // putImageData bypasses the current transform; write at raw device (0,0).
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.putImageData(imageData, 0, 0);
+  ctx.restore();
 }
 
 function sampleSnakeColumn(
@@ -731,7 +768,7 @@ export function SnakeView({
         }
         const lateralOffsetMm = (sample.centerCanvasY - (y + 0.5)) / Math.max(layout.scaleY, 0.001);
         const origin = add(sample.centerWorld, scale(sample.frame.lateral, lateralOffsetMm));
-        return sampleSlabMax(
+        return sampleSlabAverage(
           volume,
           origin,
           sample.frame.perpendicular,
@@ -991,7 +1028,7 @@ export function SnakeView({
           add(centerWorld, scale(frame.lateral, lateralMm)),
           scale(frame.perpendicular, perpendicularMm)
         );
-        return sampleSlabMax(
+        return sampleSlabAverage(
           volume,
           origin,
           frame.tangent,
