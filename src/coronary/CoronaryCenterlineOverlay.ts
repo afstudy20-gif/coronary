@@ -239,6 +239,7 @@ export class CoronaryCenterlineOverlay {
                   z: worldPoint[2],
                 };
                 points.splice(segmentHit.segmentIndex + 1, 0, inserted);
+                centerline.points = points;
                 this.callbacks.onCenterlinePointsChanged?.(segmentHit.centerlineId, points);
                 this.callbacks.onControlPointSelected?.(
                   segmentHit.centerlineId,
@@ -274,6 +275,7 @@ export class CoronaryCenterlineOverlay {
           z: worldPoint[2],
         };
         const nextPoints = this.extendCenterline(centerline.points, nextPoint, canvasPoint, viewportId);
+        centerline.points = nextPoints;
         this.callbacks.onCenterlinePointsChanged?.(this.activeCenterlineId, nextPoints);
         this.callbacks.onControlPointSelected?.(this.activeCenterlineId, nextPoints.length - 1);
         refocusOrthoViewportsOn(nextPoint);
@@ -367,6 +369,10 @@ export class CoronaryCenterlineOverlay {
             y: worldPoint[1],
             z: worldPoint[2],
           };
+          // Update internal state immediately so camera-triggered redraws
+          // (from refocusOrthoViewportsOn) render the new point position
+          // across all viewports — don't wait for the async React effect.
+          centerline.points = points;
           this.callbacks.onCenterlinePointsChanged?.(this.dragCenterlineId, points);
           refocusOrthoViewportsOn(points[this.dragPointIndex]);
           event.preventDefault();
