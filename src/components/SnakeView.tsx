@@ -92,8 +92,8 @@ interface Props {
   };
 }
 
-const SNAKE_CANVAS_HEIGHT = 360;
-const PERPENDICULAR_CANVAS_SIZE = 300;
+const SNAKE_CANVAS_HEIGHT = 320;
+const PERPENDICULAR_CANVAS_SIZE = 440;
 const HIT_RADIUS = 16;
 const SEGMENT_HIT_DISTANCE = 12;
 const SMOOTH_SEGMENTS_PER_SPAN = 5;
@@ -521,6 +521,33 @@ function autoDetectLumenContour(
   angularSteps = 48,
   lumenThreshold = 180,
 ): WorldPoint3D[] {
+  // 1. Snap center to local maximum-HU inside the plane so ray-casts start
+  //    from within the contrast-filled lumen.
+  let snapped: Vec3 = center;
+  let bestHU = sampleVoxelTrilinear(volume, center);
+  const snapRadiusMm = 1.5;
+  const snapStep = 0.3;
+  for (let du = -snapRadiusMm; du <= snapRadiusMm; du += snapStep) {
+    for (let dv = -snapRadiusMm; dv <= snapRadiusMm; dv += snapStep) {
+      const probe: Vec3 = [
+        center[0] + frame.lateral[0] * du + frame.perpendicular[0] * dv,
+        center[1] + frame.lateral[1] * du + frame.perpendicular[1] * dv,
+        center[2] + frame.lateral[2] * du + frame.perpendicular[2] * dv,
+      ];
+      const hu = sampleVoxelTrilinear(volume, probe);
+      if (hu > bestHU) {
+        bestHU = hu;
+        snapped = probe;
+      }
+    }
+  }
+  // If the best HU is still low, skip — the point is not near contrast.
+  if (bestHU < lumenThreshold) {
+    return [];
+  }
+
+  // 2. For each ray, walk outward from snapped center. First r where HU
+  //    drops below threshold is the lumen boundary.
   const result: WorldPoint3D[] = [];
   for (let a = 0; a < angularSteps; a++) {
     const ang = (a / angularSteps) * Math.PI * 2;
@@ -533,17 +560,15 @@ function autoDetectLumenContour(
     ];
 
     let edgeR = maxRadiusMm;
-    let inside = false;
     for (let r = stepMm; r <= maxRadiusMm; r += stepMm) {
-      const world = add(center, scale(rayDir, r));
+      const world = add(snapped, scale(rayDir, r));
       const hu = sampleVoxelTrilinear(volume, world);
-      if (!inside && hu >= lumenThreshold) inside = true;
-      if (inside && hu < lumenThreshold) {
-        edgeR = Math.max(0.3, r - stepMm * 0.5);
+      if (hu < lumenThreshold) {
+        edgeR = Math.max(0.4, r - stepMm * 0.5);
         break;
       }
     }
-    const edge = add(center, scale(rayDir, edgeR));
+    const edge = add(snapped, scale(rayDir, edgeR));
     result.push(toPoint(edge));
   }
   return result;
@@ -648,9 +673,23 @@ function sampleSnakeColumn(
     const t = Math.abs(deltaX) < 1e-5 ? 0 : clamp((xMm - lhs.x) / deltaX, 0, 1);
     const world = lerpPoint(points[index], points[index + 1], t);
     const centerYmm = lhs.y + (rhs.y - lhs.y) * t;
+    // Interpolate frame between two neighbouring frames so the
+    // perpendicular axis rotates smoothly through segment boundaries.
+    const frameA = frameAt(points, index, rotationDegrees);
+    const nextIndex = Math.min(points.length - 1, index + 1);
+    const frameB = frameAt(points, nextIndex, rotationDegrees);
+    const blend = (a: Vec3, b: Vec3): Vec3 =>
+      normalize([
+        a[0] * (1 - t) + b[0] * t,
+        a[1] * (1 - t) + b[1] * t,
+        a[2] * (1 - t) + b[2] * t,
+      ]);
+    const tangent = blend(frameA.tangent, frameB.tangent);
+    const lateral = blend(frameA.lateral, frameB.lateral);
+    const perpendicular = normalize(cross(tangent, lateral));
     return {
       centerWorld: toVec(world),
-      frame: frameAt(points, index, rotationDegrees),
+      frame: { tangent, lateral, perpendicular },
       centerCanvasY: layout.centerY - centerYmm * layout.scaleY,
     };
   }
@@ -1745,14 +1784,22 @@ export function SnakeView({
     }
     const stepMm = 1.0;
     let count = 0;
+    let skipped = 0;
     for (let d = 0; d <= total; d += stepMm) {
       const center = toVec(pointAtDist(points, d));
       const frame = frameAtDist(points, d, rotationDegrees);
       const lumenPts = autoDetectLumenContour(volume, center, frame);
+      if (lumenPts.length === 0) {
+        skipped += 1;
+        continue;
+      }
       onContourChange({ distanceMm: d, points: lumenPts });
       count += 1;
     }
-    onStatusChange?.(`Auto-detected lumen at ${count} cross-sections.`);
+    onStatusChange?.(
+      `Auto-detected lumen at ${count} cross-sections` +
+      (skipped > 0 ? ` (${skipped} skipped: no contrast)` : '')
+    );
   }
 
   function handlePanelDragStart(event: ReactMouseEvent<HTMLDivElement>) {
