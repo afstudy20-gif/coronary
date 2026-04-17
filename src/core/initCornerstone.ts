@@ -24,6 +24,9 @@ export async function initCornerstone(): Promise<void> {
   }
 
   cornerstone.init();
+  // Debug exposure (dev only)
+  (window as unknown as { cornerstone?: unknown }).cornerstone = cornerstone;
+  (window as unknown as { cornerstoneTools?: unknown }).cornerstoneTools = cornerstoneTools;
   cornerstone.Settings.getRuntimeSettings().set('useCursors', false);
 
   cornerstone.registerImageLoader('wadouri', dicomImageLoader.wadouri.loadImage);

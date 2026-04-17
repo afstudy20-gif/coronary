@@ -361,36 +361,76 @@ function canvasPointFromMouse(event: ReactMouseEvent<HTMLCanvasElement>): Canvas
   };
 }
 
+let _volumeContextDebugLogged = false;
+
 function getVolumeContext(volumeId: string): VolumeContext | null {
   try {
     let volume = cornerstone.cache.getVolume(volumeId) as any;
-    
-    // RADICAL CACHE LOOKUP: If ID lookup fails, search for any volume containing 'coronary'
-    // This is necessary because streaming loaders often prefix the ID (e.g. streaming:UID)
-    if (!volume) {
-      const allVolumes = (cornerstone.cache as any).getVolumes();
-      volume = allVolumes.find((v: any) => 
-         v.volumeId.includes('coronary') || v.volumeId.includes(volumeId) || v.volumeId.includes('Volume')
-      );
-    }
-    
-    if (!volume) return null;
 
-    // Use getVtkImageData() for v2.0+ compatibility if needed
+    // Fallback: search cache for any volume matching ID substring
+    if (!volume) {
+      const cache = cornerstone.cache as any;
+      const getVolumes = cache.getVolumes || cache._volumeCache?.values;
+      if (typeof getVolumes === 'function') {
+        const allVolumes = Array.from(getVolumes.call(cache._volumeCache || cache)) as any[];
+        volume = allVolumes.find((v: any) => {
+          const vid = v?.volumeId || v?.volume?.volumeId || '';
+          return vid.includes('coronary') || vid.includes(volumeId);
+        });
+        // unwrap {volumeId, volume} entries from Map
+        if (volume && !volume.imageData && volume.volume) {
+          volume = volume.volume;
+        }
+      }
+    }
+
+    if (!volume) {
+      if (!_volumeContextDebugLogged) {
+        _volumeContextDebugLogged = true;
+        console.warn('[SnakeView] No volume found for', volumeId, 'cache size:', (cornerstone.cache as any).getCacheSize?.());
+      }
+      return null;
+    }
+
     const imageData = volume.imageData || (typeof volume.getVtkImageData === 'function' ? volume.getVtkImageData() : null);
-    if (!imageData) return null;
+    if (!imageData || typeof imageData.worldToIndex !== 'function') {
+      if (!_volumeContextDebugLogged) {
+        _volumeContextDebugLogged = true;
+        console.warn('[SnakeView] Volume found but no imageData.worldToIndex', Object.keys(volume));
+      }
+      return null;
+    }
 
     const dimensions = volume.dimensions || (imageData.getDimensions ? imageData.getDimensions() : [0, 0, 0]);
     if (dimensions[0] <= 1) return null;
 
+    const voxelManager = volume.voxelManager ?? null;
+    let scalarData = volume.scalarData ?? null;
+    if (!scalarData && typeof volume.getScalarData === 'function') {
+      try { scalarData = volume.getScalarData(); } catch { /* ignore */ }
+    }
+
+    if (!voxelManager && !scalarData) {
+      if (!_volumeContextDebugLogged) {
+        _volumeContextDebugLogged = true;
+        console.warn('[SnakeView] Volume found but no scalar data or voxelManager');
+      }
+      return null;
+    }
+
+    _volumeContextDebugLogged = false; // reset on success
     return {
       imageData,
-      voxelManager: volume.voxelManager,
-      scalarData: volume.scalarData || (typeof volume.getScalarData === 'function' ? (() => { try { return volume.getScalarData(); } catch(e){ return null; } })() : null),
+      voxelManager,
+      scalarData,
       dimensions: [dimensions[0], dimensions[1], dimensions[2]],
     };
   } catch (err) {
-     return null;
+    if (!_volumeContextDebugLogged) {
+      _volumeContextDebugLogged = true;
+      console.warn('[SnakeView] getVolumeContext error:', err);
+    }
+    return null;
   }
 }
 
@@ -410,10 +450,16 @@ function sampleVoxelTrilinear(volume: VolumeContext, world: Vec3): number {
   const x1 = Math.min(x0 + 1, dimX - 1), y1 = Math.min(y0 + 1, dimY - 1), z1 = Math.min(z0 + 1, dimZ - 1);
   const tx = x - x0, ty = y - y0, tz = z - z0;
 
-  // Use voxelManager.getAt for Streaming volumes (prevents "No scalar data" exceptions)
+  // Streaming volumes expose getAtIJK; legacy volumes may expose scalarData.
+  const vm = volume.voxelManager;
   const getV = (ix: number, iy: number, iz: number): number => {
-     if (volume.voxelManager && typeof volume.voxelManager.getAt === 'function') {
-        return volume.voxelManager.getAt(ix, iy, iz) ?? VOI_LOWER;
+     if (vm && typeof vm.getAtIJK === 'function') {
+        const v = vm.getAtIJK(ix, iy, iz);
+        return (v ?? VOI_LOWER) as number;
+     }
+     if (vm && typeof vm.getAtIndex === 'function') {
+        const v = vm.getAtIndex(iz * dimX * dimY + iy * dimX + ix);
+        return (v ?? VOI_LOWER) as number;
      }
      if (volume.scalarData) {
         const offset = iz * dimX * dimY + iy * dimX + ix;
