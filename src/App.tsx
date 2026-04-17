@@ -12,7 +12,7 @@ import { attachAdvancedInteractions, destroyToolGroups, resetCrosshairsToCenter,
 const RENDERING_ENGINE_ID = 'coronaryRenderingEngine';
 const VOLUME_ID = 'cornerstoneStreamingImageVolume:coronaryVolume';
 const ORTHO_VIEWPORT_IDS = ['axial', 'sagittal', 'coronal'] as const;
-const VIEWPORT_IDS = [...ORTHO_VIEWPORT_IDS, 'volume3d'] as const;
+const VIEWPORT_IDS = ORTHO_VIEWPORT_IDS;
 
 export default function App() {
   const renderingEngineRef = useRef<cornerstone.RenderingEngine | null>(null);
@@ -107,9 +107,8 @@ export default function App() {
       const axialElement = document.getElementById('viewport-axial') as HTMLDivElement | null;
       const sagittalElement = document.getElementById('viewport-sagittal') as HTMLDivElement | null;
       const coronalElement = document.getElementById('viewport-coronal') as HTMLDivElement | null;
-      const volume3dElement = document.getElementById('viewport-3d') as HTMLDivElement | null;
 
-      if (!axialElement || !sagittalElement || !coronalElement || !volume3dElement) {
+      if (!axialElement || !sagittalElement || !coronalElement) {
         throw new Error('Viewport elements not found in DOM');
       }
 
@@ -132,14 +131,6 @@ export default function App() {
           type: cornerstone.Enums.ViewportType.ORTHOGRAPHIC,
           element: coronalElement,
           defaultOptions: { orientation: cornerstone.Enums.OrientationAxis.CORONAL },
-        },
-        {
-          viewportId: 'volume3d',
-          type: cornerstone.Enums.ViewportType.VOLUME_3D,
-          element: volume3dElement,
-          defaultOptions: {
-            background: [0.03, 0.05, 0.08] as cornerstone.Types.RGB,
-          },
         },
       ]);
 
@@ -167,13 +158,6 @@ export default function App() {
           },
         });
         viewport.resetCamera();
-      }
-
-      // Volume 3D viewport exists but is not auto-rendered with a heavy preset
-      // to keep load time low. User opts in from the volume-rendering selector.
-      const volume3dViewport = engine.getViewport('volume3d') as cornerstone.Types.IVolumeViewport | undefined;
-      if (volume3dViewport) {
-        volume3dViewport.resetCamera();
       }
 
       stage = 'renderViewports';
@@ -287,7 +271,6 @@ export default function App() {
           <div className="viewer-column">
             <ViewportGrid
               renderingEngineId={RENDERING_ENGINE_ID}
-              volumeId={VOLUME_ID}
               setupToken={viewportSetupToken}
             />
           </div>

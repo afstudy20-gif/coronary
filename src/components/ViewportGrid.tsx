@@ -9,9 +9,8 @@ import {
 import { OrientationOverlay } from './OrientationOverlay';
 
 type OrthoViewportName = 'axial' | 'sagittal' | 'coronal';
-type ViewportName = OrthoViewportName | 'volume3d';
+type ViewportName = OrthoViewportName;
 type ViewMode = 'mpr' | 'mip' | 'axial-slices';
-type VolumeRenderingMode = 'off' | 'heart' | 'vessels' | 'angio';
 
 interface ViewportPresentation {
   mode: ViewMode;
@@ -27,13 +26,6 @@ interface PivotDragState {
   distance: number;
   startClientX: number;
   startClientY: number;
-}
-
-interface CenterlineSnapshot {
-  id: string;
-  label: string;
-  color: string;
-  points: Array<{ x: number; y: number; z: number }>;
 }
 
 const ORTHO_VIEWPORTS: {
@@ -57,12 +49,6 @@ const ORTHO_VIEWPORTS: {
   },
 ];
 
-const VOLUME_VIEWPORT = {
-  id: 'viewport-3d',
-  key: 'volume3d' as const,
-  label: 'Volume Rendering',
-};
-
 const DEFAULT_PRESENTATIONS: Record<OrthoViewportName, ViewportPresentation> = {
   axial: { mode: 'mpr', mipThicknessMm: 14, pivotEnabled: false },
   sagittal: { mode: 'mpr', mipThicknessMm: 16, pivotEnabled: false },
@@ -71,7 +57,6 @@ const DEFAULT_PRESENTATIONS: Record<OrthoViewportName, ViewportPresentation> = {
 
 interface Props {
   renderingEngineId: string;
-  volumeId: string;
   setupToken: number;
 }
 
@@ -115,63 +100,18 @@ function isVolumeViewport(
   return Boolean(viewport && 'setBlendMode' in viewport && 'setOrientation' in viewport);
 }
 
-function sanitizeCenterlines(detail: unknown): CenterlineSnapshot[] {
-  if (!Array.isArray(detail)) {
-    return [];
-  }
-
-  return detail.flatMap((entry) => {
-    if (!entry || typeof entry !== 'object') {
-      return [];
-    }
-
-    const candidate = entry as Record<string, unknown>;
-    const rawPoints = Array.isArray(candidate.points) ? candidate.points : [];
-
-    return [
-      {
-        id: typeof candidate.id === 'string' ? candidate.id : crypto.randomUUID(),
-        label: typeof candidate.label === 'string' ? candidate.label : 'Centerline',
-        color: typeof candidate.color === 'string' ? candidate.color : '#79c7ff',
-        points: rawPoints.flatMap((point) => {
-          if (!point || typeof point !== 'object') {
-            return [];
-          }
-          const next = point as Record<string, unknown>;
-          const x = Number(next.x);
-          const y = Number(next.y);
-          const z = Number(next.z);
-          if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
-            return [];
-          }
-          return [{ x, y, z }];
-        }),
-      },
-    ];
-  });
-}
-
-function hasDefinedVessels(centerlines: CenterlineSnapshot[]): boolean {
-  return centerlines.some((centerline) => centerline.points.length > 0);
-}
-
-export function ViewportGrid({ renderingEngineId, volumeId, setupToken }: Props) {
+export function ViewportGrid({ renderingEngineId, setupToken }: Props) {
   const [expanded, setExpanded] = useState<ViewportName | null>(null);
   const [presentations, setPresentations] = useState<Record<OrthoViewportName, ViewportPresentation>>(
     clonePresentations
   );
   const [shiftPivotActive, setShiftPivotActive] = useState(false);
-  const [volumeRenderingMode, setVolumeRenderingMode] = useState<VolumeRenderingMode>('off');
-  const [centerlines, setCenterlines] = useState<CenterlineSnapshot[]>([]);
   const dragStateRef = useRef<PivotDragState | null>(null);
-  const volumeOverlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const previousModesRef = useRef<Record<OrthoViewportName, ViewMode>>({
     axial: 'mpr',
     sagittal: 'mpr',
     coronal: 'mpr',
   });
-
-  const hasCenterlines = hasDefinedVessels(centerlines);
 
   const viewportMap = useMemo(
     () =>
@@ -222,17 +162,6 @@ export function ViewportGrid({ renderingEngineId, volumeId, setupToken }: Props)
   }, []);
 
   useEffect(() => {
-    function handleCenterlinesChanged(event: Event) {
-      const nextDetail = (event as CustomEvent<unknown>).detail;
-      setCenterlines(sanitizeCenterlines(nextDetail));
-    }
-
-    window.addEventListener('coronary:centerlines-changed', handleCenterlinesChanged as EventListener);
-    return () =>
-      window.removeEventListener('coronary:centerlines-changed', handleCenterlinesChanged as EventListener);
-  }, []);
-
-  useEffect(() => {
     function handleCursorMoved(event: Event) {
       const detail = (event as CustomEvent).detail;
       const point = detail.point;
@@ -269,12 +198,6 @@ export function ViewportGrid({ renderingEngineId, volumeId, setupToken }: Props)
     window.addEventListener('coronary:cursor-moved', handleCursorMoved);
     return () => window.removeEventListener('coronary:cursor-moved', handleCursorMoved);
   }, [renderingEngineId]);
-
-  useEffect(() => {
-    if (!hasCenterlines && volumeRenderingMode === 'vessels') {
-      setVolumeRenderingMode('heart');
-    }
-  }, [hasCenterlines, volumeRenderingMode]);
 
   useEffect(() => {
     function handleContextMenu(event: MouseEvent) {
@@ -371,158 +294,6 @@ export function ViewportGrid({ renderingEngineId, volumeId, setupToken }: Props)
       window.clearTimeout(timeoutId);
     };
   }, [presentations, renderingEngineId, setupToken, viewportMap]);
-
-  useEffect(() => {
-    const engine = cornerstone.getRenderingEngine(renderingEngineId);
-    if (!engine) {
-      return;
-    }
-
-    let cancelled = false;
-    let timeoutId = 0;
-
-    const applyVolumeMode = () => {
-      if (cancelled) {
-        return;
-      }
-
-      const viewport = engine.getViewport(VOLUME_VIEWPORT.key);
-      if (!isVolumeViewport(viewport)) {
-        timeoutId = window.setTimeout(applyVolumeMode, 240);
-        return;
-      }
-
-      if (volumeRenderingMode === 'off') {
-        return;
-      }
-
-      let preset = 'CT-Cardiac3';
-      let sampleDistanceMultiplier = 3.8;
-      if (volumeRenderingMode === 'vessels') {
-        preset = 'CT-Coronary-Arteries-2';
-        sampleDistanceMultiplier = 2.4;
-      } else if (volumeRenderingMode === 'angio') {
-        preset = 'CT-MIP';
-        sampleDistanceMultiplier = 1.0;
-      }
-
-      viewport.setProperties(
-        {
-          preset,
-          sampleDistanceMultiplier,
-        },
-        volumeId
-      );
-      viewport.render();
-    };
-
-    timeoutId = window.setTimeout(applyVolumeMode, 120);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeoutId);
-    };
-  }, [renderingEngineId, setupToken, volumeId, volumeRenderingMode]);
-
-  useEffect(() => {
-    const canvas = volumeOverlayCanvasRef.current;
-    if (!canvas) {
-      return;
-    }
-
-    let frameId = 0;
-
-    const drawOverlay = () => {
-      frameId = window.requestAnimationFrame(drawOverlay);
-
-      const engine = cornerstone.getRenderingEngine(renderingEngineId);
-      const viewport = engine?.getViewport(VOLUME_VIEWPORT.key);
-      if (!canvas || !viewport || !('worldToCanvas' in viewport)) {
-        return;
-      }
-
-      const host = viewport.element;
-      if (!host) {
-        return;
-      }
-
-      const width = host.clientWidth;
-      const height = host.clientHeight;
-      if (!width || !height) {
-        return;
-      }
-
-      const dpr = window.devicePixelRatio || 1;
-      const nextWidth = Math.max(1, Math.round(width * dpr));
-      const nextHeight = Math.max(1, Math.round(height * dpr));
-      if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
-        canvas.width = nextWidth;
-        canvas.height = nextHeight;
-      }
-
-      const context = canvas.getContext('2d');
-      if (!context) {
-        return;
-      }
-
-      context.setTransform(1, 0, 0, 1, 0, 0);
-      context.clearRect(0, 0, canvas.width, canvas.height);
-      if (volumeRenderingMode !== 'vessels' || !hasCenterlines) {
-        return;
-      }
-
-      context.setTransform(dpr, 0, 0, dpr, 0, 0);
-      context.lineJoin = 'round';
-      context.lineCap = 'round';
-      context.font = '12px ui-monospace, SFMono-Regular, Menlo, monospace';
-
-      for (const centerline of centerlines) {
-        const projected = centerline.points.flatMap((point) => {
-          const canvasPoint = viewport.worldToCanvas([point.x, point.y, point.z]);
-          if (
-            !Array.isArray(canvasPoint) ||
-            !Number.isFinite(canvasPoint[0]) ||
-            !Number.isFinite(canvasPoint[1])
-          ) {
-            return [];
-          }
-          return [{ x: canvasPoint[0], y: canvasPoint[1] }];
-        });
-
-        if (!projected.length) {
-          continue;
-        }
-
-        context.strokeStyle = centerline.color;
-        context.fillStyle = centerline.color;
-        context.lineWidth = 2.2;
-
-        if (projected.length === 1) {
-          context.beginPath();
-          context.arc(projected[0].x, projected[0].y, 4, 0, Math.PI * 2);
-          context.fill();
-        } else {
-          context.beginPath();
-          context.moveTo(projected[0].x, projected[0].y);
-          for (let index = 1; index < projected.length; index += 1) {
-            context.lineTo(projected[index].x, projected[index].y);
-          }
-          context.stroke();
-        }
-
-        const distalPoint = projected[projected.length - 1];
-        const labelX = distalPoint.x + 8;
-        const labelY = distalPoint.y - 8;
-        const textWidth = context.measureText(centerline.label).width;
-        context.fillStyle = 'rgba(4, 10, 16, 0.72)';
-        context.fillRect(labelX - 4, labelY - 14, textWidth + 8, 18);
-        context.fillStyle = centerline.color;
-        context.fillText(centerline.label, labelX, labelY);
-      }
-    };
-
-    drawOverlay();
-    return () => window.cancelAnimationFrame(frameId);
-  }, [centerlines, hasCenterlines, renderingEngineId, volumeRenderingMode]);
 
   useEffect(() => {
     const engine = cornerstone.getRenderingEngine(renderingEngineId);
@@ -754,69 +525,6 @@ export function ViewportGrid({ renderingEngineId, volumeId, setupToken }: Props)
           </section>
         );
       })}
-
-      <section
-        className={`viewport-shell ${expanded != null && expanded !== VOLUME_VIEWPORT.key ? 'hidden' : ''} ${
-          expanded === VOLUME_VIEWPORT.key ? 'focused' : ''
-        }`}
-      >
-        <div className="viewport-header">
-          <div className="viewport-header-copy">
-            <span>Volume Rendering View</span>
-            <small>{VOLUME_VIEWPORT.label}</small>
-          </div>
-
-          <div className="viewport-controls">
-            <label className="viewport-inline-field">
-              <span>View</span>
-              <select
-                className="viewport-select"
-                value={volumeRenderingMode}
-                onChange={(event) => setVolumeRenderingMode(event.target.value as VolumeRenderingMode)}
-              >
-                <option value="off">Off</option>
-                <option value="heart">Heart</option>
-                <option value="vessels" disabled={!hasCenterlines}>
-                  Vessels
-                </option>
-                <option value="angio" disabled={!hasCenterlines}>
-                  Angio View
-                </option>
-              </select>
-            </label>
-
-            <button
-              className="ghost-btn"
-              onClick={() => setExpanded(expanded === VOLUME_VIEWPORT.key ? null : VOLUME_VIEWPORT.key)}
-            >
-              {expanded === VOLUME_VIEWPORT.key ? 'Exit' : 'Expand'}
-            </button>
-          </div>
-        </div>
-
-        <div className="viewport-mode-strip">
-          {volumeRenderingMode === 'vessels'
-            ? 'Vessels View applies a coronary vessel preset and overlays the defined centerline tree.'
-            : volumeRenderingMode === 'angio'
-              ? 'Angio View creates fluoroscopic/angiographic-like images.'
-              : hasCenterlines
-                ? 'Use the View selector to switch between the cardiac volume render and the vessels-focused view.'
-                : 'Define at least one centerline to enable the Vessels View selector.'}
-        </div>
-
-        <div className={`viewport-frame ${volumeRenderingMode === 'vessels' || volumeRenderingMode === 'angio' ? 'vessels-mode' : ''}`}>
-          <div id={VOLUME_VIEWPORT.id} className="viewport-canvas viewport-volume-rendering" />
-          <canvas
-            ref={volumeOverlayCanvasRef}
-            className={`viewport-overlay ${volumeRenderingMode === 'vessels' || volumeRenderingMode === 'angio' ? 'visible' : ''}`}
-          />
-          {!hasCenterlines && (
-            <div className="viewport-overlay-hint">
-              Vessels View becomes available after at least one centerline is created.
-            </div>
-          )}
-        </div>
-      </section>
     </div>
   );
 }

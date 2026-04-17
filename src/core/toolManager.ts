@@ -3,13 +3,11 @@ import * as cornerstoneTools from '@cornerstonejs/tools';
 import { getToolNames } from './initCornerstone';
 
 const MPR_TOOL_GROUP_ID = 'coronaryMprToolGroup';
-const VOL3D_TOOL_GROUP_ID = 'coronaryVol3dToolGroup';
 const MPR_VIEWPORT_IDS = ['axial', 'sagittal', 'coronal'];
 
 export type ToolName = 'Crosshairs' | 'WindowLevel' | 'Pan' | 'Zoom' | 'Length' | 'Probe';
 
 let mprToolGroup: cornerstoneTools.Types.IToolGroup | undefined;
-let vol3dToolGroup: cornerstoneTools.Types.IToolGroup | undefined;
 let voiSync: cornerstoneTools.Synchronizer | undefined;
 let zoomPanSync: cornerstoneTools.Synchronizer | undefined;
 
@@ -77,36 +75,6 @@ export function setupToolGroups(renderingEngineId: string): void {
   });
 
   mprToolGroup = group;
-
-  // === 3D Volume Tool Group ===
-  let vol3dGroup = cornerstoneTools.ToolGroupManager.createToolGroup(VOL3D_TOOL_GROUP_ID);
-  if (!vol3dGroup) {
-    cornerstoneTools.ToolGroupManager.destroyToolGroup(VOL3D_TOOL_GROUP_ID);
-    vol3dGroup = cornerstoneTools.ToolGroupManager.createToolGroup(VOL3D_TOOL_GROUP_ID);
-  }
-  if (vol3dGroup) {
-    vol3dGroup.addTool(names.Pan);
-    vol3dGroup.addTool(names.Zoom);
-    if (names.TrackballRotate) {
-      vol3dGroup.addTool(names.TrackballRotate);
-      vol3dGroup.addViewport('volume3d', renderingEngineId);
-      vol3dGroup.setToolActive(names.TrackballRotate, {
-        bindings: [{ mouseButton: cornerstoneTools.Enums.MouseBindings.Primary }],
-      });
-    } else {
-      vol3dGroup.addViewport('volume3d', renderingEngineId);
-    }
-    vol3dGroup.setToolActive(names.Pan, {
-      bindings: [
-        { mouseButton: cornerstoneTools.Enums.MouseBindings.Auxiliary },
-        { mouseButton: cornerstoneTools.Enums.MouseBindings.Primary, modifierKey: cornerstoneTools.Enums.KeyboardBindings.Shift },
-      ],
-    });
-    vol3dGroup.setToolActive(names.Zoom, {
-      bindings: [{ mouseButton: cornerstoneTools.Enums.MouseBindings.Secondary }],
-    });
-    vol3dToolGroup = vol3dGroup;
-  }
 
   // === Synchronizers ===
   zoomPanSync = cornerstoneTools.synchronizers.createZoomPanSynchronizer('coronaryZoomPanSync');
@@ -379,9 +347,5 @@ export function destroyToolGroups(): void {
   if (mprToolGroup) {
     cornerstoneTools.ToolGroupManager.destroyToolGroup(MPR_TOOL_GROUP_ID);
     mprToolGroup = undefined;
-  }
-  if (vol3dToolGroup) {
-    cornerstoneTools.ToolGroupManager.destroyToolGroup(VOL3D_TOOL_GROUP_ID);
-    vol3dToolGroup = undefined;
   }
 }
