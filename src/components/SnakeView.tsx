@@ -1354,6 +1354,11 @@ export function SnakeView({
         if (!canvas || drag.pointIndex < 0 || !drag.startPoint) {
           return;
         }
+        // Ignore micro movements so a plain click on a point doesn't
+        // nudge it by sub-pixel jitter.
+        if (!drag.moved && Math.abs(deltaX) < 4 && Math.abs(deltaY) < 4) {
+          return;
+        }
         const width = canvas.clientWidth;
         const height = canvas.clientHeight;
         const layout = buildSnakeLayout(drag.startPoints, drag.startRotation, width, height, viewMode);
@@ -1535,26 +1540,10 @@ export function SnakeView({
       return;
     }
 
-    if (layout.pixels.length === 0) {
-      return;
-    }
-
-    const distalPixel = layout.pixels[layout.pixels.length - 1];
-    if (target.x <= distalPixel.x + 8) {
-      return;
-    }
-
-    const frame = frameAt(points, points.length - 1, rotationDegrees);
-    const dxMm = Math.max((target.x - distalPixel.x) / Math.max(layout.scaleX, 0.001), 0.8);
-    const dyMm = (distalPixel.y - target.y) / Math.max(layout.scaleY, 0.001);
-    const newPoint = add(
-      add(toVec(points[points.length - 1]), scale(frame.tangent, dxMm)),
-      scale(frame.lateral, dyMm)
-    );
-    const nextPoints = [...clonePoints(points), toPoint(newPoint)];
-    onPointsChange(nextPoints);
-    onSelectPoint(nextPoints.length - 1);
-    onStatusChange?.(`${record.label}: distal control point extended from Snake View.`);
+    // Note: auto-extend-on-click disabled. Extending the centerline from
+    // Snake View caused accidental far-away point inserts when the user
+    // clicked near — but slightly past — the distal control point. Extend
+    // via the main viewports (Draw / Extend mode) instead.
   }
 
   function handleSnakeWheel(event: ReactWheelEvent<HTMLCanvasElement>) {
