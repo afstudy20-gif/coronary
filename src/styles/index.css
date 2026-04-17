@@ -1091,3 +1091,31 @@ textarea {
   flex: 0 0 auto;
 }
 
+/* Viewport grid toolbar (sync toggle etc.) */
+.viewport-grid-toolbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 10px;
+  background: rgba(18, 28, 40, 0.6);
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  margin-bottom: 6px;
+}
+
+.sync-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-soft);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.sync-toggle input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+

@@ -102,6 +102,7 @@ function isVolumeViewport(
 
 export function ViewportGrid({ renderingEngineId, setupToken }: Props) {
   const [expanded, setExpanded] = useState<ViewportName | null>(null);
+  const [syncMode, setSyncMode] = useState<boolean>(true);
   const [presentations, setPresentations] = useState<Record<OrthoViewportName, ViewportPresentation>>(
     clonePresentations
   );
@@ -413,17 +414,39 @@ export function ViewportGrid({ renderingEngineId, setupToken }: Props) {
     viewportKey: OrthoViewportName,
     patch: Partial<ViewportPresentation>
   ) {
-    setPresentations((current) => ({
-      ...current,
-      [viewportKey]: {
-        ...current[viewportKey],
-        ...patch,
-      },
-    }));
+    // Sync mode fans mode + slab thickness across all orthos. pivotEnabled
+    // stays local because it is a viewport-specific interaction flag.
+    const sharedPatch: Partial<ViewportPresentation> = {};
+    if ('mode' in patch) sharedPatch.mode = patch.mode;
+    if ('mipThicknessMm' in patch) sharedPatch.mipThicknessMm = patch.mipThicknessMm;
+    const broadcast = syncMode && Object.keys(sharedPatch).length > 0;
+
+    setPresentations((current) => {
+      const next = { ...current };
+      if (broadcast) {
+        for (const key of Object.keys(next) as OrthoViewportName[]) {
+          next[key] = { ...next[key], ...sharedPatch };
+        }
+        next[viewportKey] = { ...next[viewportKey], ...patch };
+      } else {
+        next[viewportKey] = { ...next[viewportKey], ...patch };
+      }
+      return next;
+    });
   }
 
   return (
     <div className={`viewport-grid ${expanded ? 'expanded' : ''}`}>
+      <div className="viewport-grid-toolbar">
+        <label className="sync-toggle" title="When on, switching a viewport to MIP applies the same mode and slab thickness to all MPR viewports.">
+          <input
+            type="checkbox"
+            checked={syncMode}
+            onChange={(event) => setSyncMode(event.target.checked)}
+          />
+          <span>Sync view mode + slab</span>
+        </label>
+      </div>
       {ORTHO_VIEWPORTS.map((viewport) => {
         const hidden = expanded != null && expanded !== viewport.key;
         const presentation = presentations[viewport.key];
