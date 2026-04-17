@@ -226,7 +226,7 @@ textarea {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 240px 1fr 390px;
+  grid-template-columns: 160px 1fr 330px;
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 }
@@ -779,7 +779,7 @@ textarea {
 
 @media (max-width: 1280px) {
   .workspace-layout {
-    grid-template-columns: 220px 1fr 340px;
+    grid-template-columns: 140px 1fr 300px;
   }
 }
 
@@ -1271,5 +1271,39 @@ textarea {
 .workspace-panel .plaque-breakdown .breakdown-item {
   font-size: 11px;
   padding: 4px 0;
+}
+
+/* ── Compact left-side series panel ── */
+
+.series-panel .panel-header {
+  padding: 8px 10px;
+  font-size: 10px;
+}
+
+.series-panel .series-list {
+  padding: 6px;
+  gap: 5px;
+  height: calc(100% - 36px);
+}
+
+.series-panel .series-card {
+  padding: 7px 9px;
+  gap: 4px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.series-panel .series-card strong {
+  font-size: 11px;
+}
+
+.series-panel .series-card .series-pill,
+.series-panel .series-card .series-meta {
+  font-size: 10px;
+}
+
+.series-panel .series-card .series-desc {
+  font-size: 10px;
+  line-height: 1.3;
 }
 
