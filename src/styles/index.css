@@ -1119,3 +1119,155 @@ textarea {
   accent-color: var(--accent);
 }
 
+/* ── Compact right-side workspace panel ── */
+
+.workspace-panel {
+  font-size: 12px;
+}
+
+.workspace-panel .panel-header {
+  padding: 8px 12px;
+  font-size: 10px;
+}
+
+.workspace-panel .workspace-scroll {
+  padding: 8px;
+  height: calc(100% - 36px);
+}
+
+.workspace-panel .workspace-card {
+  padding: 10px;
+  gap: 8px;
+  border-radius: 12px;
+  margin-bottom: 8px;
+}
+
+.workspace-panel .workspace-card h3 {
+  font-size: 12px;
+  margin: 0;
+}
+
+.workspace-panel .panel-pill {
+  padding: 2px 8px;
+  font-size: 10px;
+}
+
+.workspace-panel .status-card p {
+  font-size: 11px;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.workspace-panel .mini-copy {
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.workspace-panel .section-label {
+  font-size: 10px;
+  margin-top: 2px;
+}
+
+.workspace-panel .vessel-tab {
+  padding: 5px 9px;
+  font-size: 11px;
+  border-radius: 8px;
+}
+
+.workspace-panel .vessel-tabs {
+  gap: 4px;
+}
+
+.workspace-panel .step-tabs {
+  gap: 6px;
+}
+
+.workspace-panel .inline-form {
+  gap: 6px;
+}
+
+.workspace-panel .inline-form input,
+.workspace-panel .inline-form select {
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.workspace-panel .centerline-row {
+  padding: 6px 9px;
+  gap: 7px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.workspace-panel .centerline-meta {
+  font-size: 10px;
+}
+
+.workspace-panel .color-dot {
+  width: 8px;
+  height: 8px;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
+}
+
+.workspace-panel .centerline-list {
+  gap: 4px;
+}
+
+.workspace-panel .metric-list {
+  gap: 4px;
+}
+
+.workspace-panel .metric-row {
+  padding: 5px 9px;
+  font-size: 11px;
+  border-radius: 8px;
+}
+
+.workspace-panel .field-block span {
+  font-size: 10px;
+}
+
+.workspace-panel .field-block input,
+.workspace-panel .field-block select,
+.workspace-panel .field-block textarea {
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.workspace-panel .action-grid {
+  gap: 5px;
+}
+
+.workspace-panel .action-grid.compact {
+  gap: 4px;
+}
+
+.workspace-panel .primary-btn.small,
+.workspace-panel .secondary-btn.small,
+.workspace-panel .ghost-btn.small {
+  padding: 4px 9px;
+  font-size: 11px;
+}
+
+.workspace-panel .instruction-box {
+  padding: 6px 8px;
+  font-size: 10px;
+  line-height: 1.35;
+  border-radius: 8px;
+}
+
+.workspace-panel .card-title-row {
+  gap: 8px;
+}
+
+.workspace-panel .card-badge {
+  padding: 1px 6px;
+  font-size: 9px;
+  border-radius: 999px;
+}
+
+.workspace-panel .plaque-breakdown .breakdown-item {
+  font-size: 11px;
+  padding: 4px 0;
+}
+
