@@ -6,7 +6,7 @@ import {
   type Vec3, type Frame3D,
   generateCircularContour, applySphereBrush, generateVesselWallContour,
   pointAtDist, frameAtDist, interpolateContourRadii,
-  smoothCenterline
+  smoothCenterline, buildParallelTransportFrames
 } from '../coronary/QCAGeometry';
 
 export type SnakeViewMode = 'curved' | 'stretched' | 'calcifications';
@@ -644,17 +644,24 @@ function sampleSnakeColumn(
   layout: SnakeLayout,
   points: WorldPoint3D[],
   rotationDegrees: number,
-  canvasX: number
+  canvasX: number,
+  frames?: Frame3D[]
 ): { centerWorld: Vec3; frame: Frame3D; centerCanvasY: number } | null {
   if (points.length === 0 || layout.flattened.length === 0) {
     return null;
   }
 
+  // Frames must stay continuous across the whole curve to avoid "slab cut"
+  // artifacts in stretched/curved MPR. Prefer parallel-transport frames
+  // computed once for the full point set; fall back to per-index frameAt
+  // when a caller does not supply them.
+  const getFrame = (idx: number): Frame3D =>
+    frames ? frames[Math.max(0, Math.min(frames.length - 1, idx))] : frameAt(points, idx, rotationDegrees);
+
   if (points.length === 1) {
-    const frame = frameAt(points, 0, rotationDegrees);
     return {
       centerWorld: toVec(points[0]),
-      frame,
+      frame: getFrame(0),
       centerCanvasY: layout.pixels[0]?.y ?? layout.centerY,
     };
   }
@@ -673,11 +680,9 @@ function sampleSnakeColumn(
     const t = Math.abs(deltaX) < 1e-5 ? 0 : clamp((xMm - lhs.x) / deltaX, 0, 1);
     const world = lerpPoint(points[index], points[index + 1], t);
     const centerYmm = lhs.y + (rhs.y - lhs.y) * t;
-    // Interpolate frame between two neighbouring frames so the
-    // perpendicular axis rotates smoothly through segment boundaries.
-    const frameA = frameAt(points, index, rotationDegrees);
+    const frameA = getFrame(index);
     const nextIndex = Math.min(points.length - 1, index + 1);
-    const frameB = frameAt(points, nextIndex, rotationDegrees);
+    const frameB = getFrame(nextIndex);
     const blend = (a: Vec3, b: Vec3): Vec3 =>
       normalize([
         a[0] * (1 - t) + b[0] * t,
@@ -697,7 +702,7 @@ function sampleSnakeColumn(
   const fallbackIndex = xMm < layout.flattened[0].x ? 0 : points.length - 1;
   return {
     centerWorld: toVec(points[fallbackIndex]),
-    frame: frameAt(points, fallbackIndex, rotationDegrees),
+    frame: getFrame(fallbackIndex),
     centerCanvasY: layout.pixels[fallbackIndex]?.y ?? layout.centerY,
   };
 }
@@ -820,6 +825,7 @@ export function SnakeView({
     const sampledLayout = sampledPoints.length !== points.length
       ? buildSnakeLayout(sampledPoints, rotationDegrees, width, height, viewMode)
       : layout;
+    const sampledFrames = buildParallelTransportFrames(sampledPoints, rotationDegrees);
 
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -855,7 +861,7 @@ export function SnakeView({
 
     if (volume) {
       drawGrayscaleImage(ctx, Math.floor(width), Math.floor(height), viewMode, (x, y) => {
-        const sample = sampleSnakeColumn(sampledLayout, sampledPoints, rotationDegrees, x + 0.5);
+        const sample = sampleSnakeColumn(sampledLayout, sampledPoints, rotationDegrees, x + 0.5, sampledFrames);
         if (!sample) {
           return VOI_LOWER;
         }

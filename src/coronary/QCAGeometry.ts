@@ -772,3 +772,86 @@ export function samplePlaqueComposition(
   
   return comp;
 }
+
+/**
+ * Parallel-transport frame construction along a 3D polyline.
+ *
+ * Why: Per-point frameAt() chooses a helper world axis via a threshold on
+ * dot(tangent, Z). When the tangent sweeps across that threshold along a
+ * curved centerline, the helper flips → baseLateral jumps → rotated lateral
+ * jumps. In stretched/curved MPR, that translates to visible vertical
+ * discontinuities ("slab cuts") at the transition points.
+ *
+ * Parallel transport avoids the threshold entirely: we seed an initial
+ * lateral once, and for every subsequent point project the previous lateral
+ * onto the plane perpendicular to the new tangent. The lateral axis then
+ * varies continuously along the curve regardless of how the tangent rotates.
+ */
+export function buildParallelTransportFrames(
+  points: WorldPoint3D[],
+  rotationDegrees: number = 0
+): Frame3D[] {
+  if (points.length === 0) return [];
+  if (points.length === 1) {
+    return [{ tangent: [0, 0, 1], lateral: [1, 0, 0], perpendicular: [0, 1, 0] }];
+  }
+
+  const tangents: Vec3[] = [];
+  for (let i = 0; i < points.length; i += 1) {
+    const prev = toVec(points[Math.max(0, i - 1)]);
+    const next = toVec(points[Math.min(points.length - 1, i + 1)]);
+    let t = normalize(subtract(next, prev));
+    if (magnitude(t) === 0) {
+      const current = toVec(points[i]);
+      const fallback = i + 1 < points.length ? toVec(points[i + 1]) : current;
+      t = normalize(subtract(fallback, current));
+    }
+    if (magnitude(t) === 0) t = [1, 0, 0];
+    tangents.push(t);
+  }
+
+  // Seed lateral: pick world helper most perpendicular to initial tangent,
+  // then drop the component along the tangent so lateral ⟂ tangent exactly.
+  const t0 = tangents[0];
+  const ax = Math.abs(t0[0]);
+  const ay = Math.abs(t0[1]);
+  const az = Math.abs(t0[2]);
+  let helper: Vec3;
+  if (az <= ax && az <= ay) helper = [0, 0, 1];
+  else if (ay <= ax) helper = [0, 1, 0];
+  else helper = [1, 0, 0];
+  let lateral = normalize(subtract(helper, scale(t0, dot(helper, t0))));
+  if (magnitude(lateral) === 0) lateral = normalize(cross(t0, [1, 0, 0]));
+  if (magnitude(lateral) === 0) lateral = [0, 1, 0];
+
+  const rawLaterals: Vec3[] = [lateral];
+  for (let i = 1; i < tangents.length; i += 1) {
+    const t = tangents[i];
+    // Project previous lateral onto the plane perpendicular to the new tangent.
+    let projected = subtract(rawLaterals[i - 1], scale(t, dot(rawLaterals[i - 1], t)));
+    if (magnitude(projected) < 1e-6) {
+      // Degenerate (tangent flipped ~180°). Fall back to cross with previous.
+      projected = cross(rawLaterals[i - 1], t);
+      if (magnitude(projected) < 1e-6) projected = [0, 1, 0];
+    }
+    rawLaterals.push(normalize(projected));
+  }
+
+  const radians = (rotationDegrees * Math.PI) / 180;
+  const cosR = Math.cos(radians);
+  const sinR = Math.sin(radians);
+
+  return tangents.map((tangent, i) => {
+    const baseLateral = rawLaterals[i];
+    const basePerpendicular = normalize(cross(tangent, baseLateral));
+    const rotatedLateral = normalize(
+      add(scale(baseLateral, cosR), scale(basePerpendicular, sinR))
+    );
+    const rotatedPerpendicular = normalize(cross(tangent, rotatedLateral));
+    return {
+      tangent,
+      lateral: rotatedLateral,
+      perpendicular: rotatedPerpendicular,
+    };
+  });
+}
