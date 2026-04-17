@@ -325,8 +325,8 @@ textarea {
   width: 100%;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-rows: auto repeat(2, minmax(0, 1fr));
+  gap: 10px;
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -334,7 +334,7 @@ textarea {
 
 .viewport-grid.expanded {
   grid-template-columns: 1fr;
-  grid-template-rows: 1fr;
+  grid-template-rows: auto 1fr;
 }
 
 .viewport-shell {
@@ -1094,14 +1094,16 @@ textarea {
 /* Viewport grid toolbar (sync toggle etc.) */
 .viewport-grid-toolbar {
   grid-column: 1 / -1;
+  grid-row: 1 / 2;
+  align-self: start;
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 6px 10px;
+  padding: 4px 10px;
   background: rgba(18, 28, 40, 0.6);
   border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  margin-bottom: 6px;
+  border-radius: 8px;
+  height: 26px;
 }
 
 .sync-toggle {
