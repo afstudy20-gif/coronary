@@ -27,14 +27,43 @@ function snapClickToMaxIntensity(
     : 0;
   const probeRangeMm = Math.max(slab, 8);
 
-  // Locate the matching volume via the viewport's actors.
-  const actors = (viewport as cornerstone.Types.IVolumeViewport).getActors?.() ?? [];
+  // Locate the matching volume. Try viewport actors first, then fall back
+  // to cache scan — some cornerstone versions use actorUID that doesn't
+  // match the cached volumeId directly.
   let volume: any = null;
+  const actors = (viewport as cornerstone.Types.IVolumeViewport).getActors?.() ?? [];
   for (const actor of actors) {
-    const cached = cornerstone.cache.getVolume(actor.uid);
+    const uid = (actor as any).uid || (actor as any).referencedId || (actor as any).actorUID;
+    if (!uid) continue;
+    const cached = cornerstone.cache.getVolume(uid);
     if (cached) { volume = cached; break; }
   }
-  if (!volume?.imageData || !volume.voxelManager?.getAtIJK || !volume.dimensions) {
+  if (!volume) {
+    const cache = cornerstone.cache as any;
+    const getVolumes = cache.getVolumes || cache._volumeCache?.values;
+    if (typeof getVolumes === 'function') {
+      try {
+        const all = Array.from(getVolumes.call(cache._volumeCache || cache)) as any[];
+        volume = all.find((v: any) => {
+          const inner = v?.volume || v;
+          return inner?.imageData && (inner.voxelManager || inner.scalarData || typeof inner.getScalarData === 'function');
+        });
+        if (volume && !volume.imageData && volume.volume) volume = volume.volume;
+      } catch { /* ignore */ }
+    }
+  }
+  if (!volume?.imageData?.worldToIndex || !volume.dimensions) {
+    return worldPoint;
+  }
+
+  // Resolve scalar accessor: streaming volumes expose voxelManager.getAtIJK;
+  // legacy volumes expose scalarData / getScalarData().
+  const vm = volume.voxelManager;
+  let scalarData: ArrayLike<number> | null = volume.scalarData ?? null;
+  if (!scalarData && typeof volume.getScalarData === 'function') {
+    try { scalarData = volume.getScalarData(); } catch { /* ignore */ }
+  }
+  if (!vm?.getAtIJK && !scalarData) {
     return worldPoint;
   }
   const dims = volume.dimensions;
@@ -46,7 +75,12 @@ function snapClickToMaxIntensity(
     const j = Math.round(idx[1]);
     const k = Math.round(idx[2]);
     if (i < 0 || i >= dims[0] || j < 0 || j >= dims[1] || k < 0 || k >= dims[2]) return -1000;
-    const v = volume.voxelManager.getAtIJK(i, j, k);
+    if (vm?.getAtIJK) {
+      const v = vm.getAtIJK(i, j, k);
+      return typeof v === 'number' ? v : -1000;
+    }
+    const offset = i + j * dims[0] + k * dims[0] * dims[1];
+    const v = scalarData![offset];
     return typeof v === 'number' ? v : -1000;
   };
 
@@ -66,8 +100,10 @@ function snapClickToMaxIntensity(
       bestPoint = probe;
     }
   }
-  // Only snap if we actually found contrast (>= 150 HU covers blood + calcium)
-  return bestHU >= 150 ? bestPoint : worldPoint;
+  // Only snap if we actually found contrast. 120 HU covers contrast-filled
+  // lumen (~200-500 HU) with margin for partial-volume edges; still rejects
+  // myocardium (~40 HU) and air (-1000 HU).
+  return bestHU >= 120 ? bestPoint : worldPoint;
 }
 
 function refocusOrthoViewportsOn(point: WorldPoint3D): void {
