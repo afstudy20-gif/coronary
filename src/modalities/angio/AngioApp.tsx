@@ -15,10 +15,12 @@ const VIEWPORT_ID = 'angio-main';
 
 interface AngioAppProps {
   onBack?: () => void;
+  initialFiles?: File[];
 }
 
-export default function AngioApp({ onBack }: AngioAppProps = {}) {
+export default function AngioApp({ onBack, initialFiles }: AngioAppProps = {}) {
   const renderingEngineRef = useRef<cornerstone.RenderingEngine | null>(null);
+  const initialFilesConsumedRef = useRef(false);
 
   const [isInitialized, setIsInitialized] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -62,6 +64,15 @@ export default function AngioApp({ onBack }: AngioAppProps = {}) {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [qcaUndo]);
+
+  useEffect(() => {
+    if (!isInitialized || initialFilesConsumedRef.current) return;
+    if (initialFiles && initialFiles.length > 0) {
+      initialFilesConsumedRef.current = true;
+      void handleFilesLoaded(initialFiles);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isInitialized]);
 
   useEffect(() => {
     let mounted = true;

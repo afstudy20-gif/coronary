@@ -1075,9 +1075,19 @@ textarea {
 }
 
 .modality-card p {
-  margin: 0;
+  margin: 0 0 16px 0;
   color: var(--text-soft);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.modality-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.modality-card-actions button {
+  flex: 0 0 auto;
 }
 

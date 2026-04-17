@@ -16,10 +16,12 @@ const VIEWPORT_IDS = ORTHO_VIEWPORT_IDS;
 
 interface CtAppProps {
   onBack?: () => void;
+  initialFiles?: File[];
 }
 
-export default function CtApp({ onBack }: CtAppProps = {}) {
+export default function CtApp({ onBack, initialFiles }: CtAppProps = {}) {
   const renderingEngineRef = useRef<cornerstone.RenderingEngine | null>(null);
+  const initialFilesConsumedRef = useRef(false);
   const advancedInteractionsCleanupRef = useRef<(() => void) | null>(null);
 
   const [isInitialized, setIsInitialized] = useState(false);
@@ -30,6 +32,15 @@ export default function CtApp({ onBack }: CtAppProps = {}) {
   const [loadingProgress, setLoadingProgress] = useState('');
   const [workspaceResetToken, setWorkspaceResetToken] = useState(0);
   const [viewportSetupToken, setViewportSetupToken] = useState(0);
+
+  useEffect(() => {
+    if (!isInitialized || initialFilesConsumedRef.current) return;
+    if (initialFiles && initialFiles.length > 0) {
+      initialFilesConsumedRef.current = true;
+      void handleFilesLoaded(initialFiles);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isInitialized]);
 
   useEffect(() => {
     let mounted = true;
