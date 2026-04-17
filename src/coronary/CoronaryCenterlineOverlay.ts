@@ -13,13 +13,19 @@ function snapClickToMaxIntensity(
   worldPoint: cornerstone.Types.Point3,
   viewport: cornerstone.Types.IViewport,
 ): cornerstone.Types.Point3 {
-  if (!('getSlabThickness' in viewport)) return worldPoint;
-  const slab = (viewport as cornerstone.Types.IVolumeViewport).getSlabThickness?.() ?? 0;
-  if (!slab || slab < 1) return worldPoint;
-
   const camera = viewport.getCamera();
   const vpn = camera.viewPlaneNormal as cornerstone.Types.Point3 | undefined;
   if (!vpn) return worldPoint;
+
+  // Probe range for max-intensity search along view normal.
+  // Decoupled from slab thickness: thin-slice viewports (slab ~0.1mm) still
+  // need depth snap so points land on the vessel lumen, not on the view plane.
+  // Without this, clicks in one viewport place points at the slice depth,
+  // appearing offset from the vessel when projected into other viewports.
+  const slab = ('getSlabThickness' in viewport)
+    ? ((viewport as cornerstone.Types.IVolumeViewport).getSlabThickness?.() ?? 0)
+    : 0;
+  const probeRangeMm = Math.max(slab, 8);
 
   // Locate the matching volume via the viewport's actors.
   const actors = (viewport as cornerstone.Types.IVolumeViewport).getActors?.() ?? [];
@@ -44,7 +50,7 @@ function snapClickToMaxIntensity(
     return typeof v === 'number' ? v : -1000;
   };
 
-  const half = slab * 0.5;
+  const half = probeRangeMm * 0.5;
   const stepMm = 0.3;
   let bestHU = -Infinity;
   let bestPoint = worldPoint;
