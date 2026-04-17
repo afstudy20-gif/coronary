@@ -1,6 +1,69 @@
 import * as cornerstone from '@cornerstonejs/core';
 import type { CoronaryVesselId, WorldPoint3D } from './QCATypes';
 
+/**
+ * When user clicks in a MIP/thick-slab viewport, the raw canvasToWorld
+ * returns the point at the focal plane (center of slab). The bright
+ * vessel they see may actually be at a different depth within the slab.
+ * This helper raycasts along the viewport view-plane normal, finds the
+ * highest-HU voxel within the slab, and returns its world position so
+ * centerline points snap onto real anatomy visible in other views.
+ */
+function snapClickToMaxIntensity(
+  worldPoint: cornerstone.Types.Point3,
+  viewport: cornerstone.Types.IViewport,
+): cornerstone.Types.Point3 {
+  if (!('getSlabThickness' in viewport)) return worldPoint;
+  const slab = (viewport as cornerstone.Types.IVolumeViewport).getSlabThickness?.() ?? 0;
+  if (!slab || slab < 1) return worldPoint;
+
+  const camera = viewport.getCamera();
+  const vpn = camera.viewPlaneNormal as cornerstone.Types.Point3 | undefined;
+  if (!vpn) return worldPoint;
+
+  // Locate the matching volume via the viewport's actors.
+  const actors = (viewport as cornerstone.Types.IVolumeViewport).getActors?.() ?? [];
+  let volume: any = null;
+  for (const actor of actors) {
+    const cached = cornerstone.cache.getVolume(actor.uid);
+    if (cached) { volume = cached; break; }
+  }
+  if (!volume?.imageData || !volume.voxelManager?.getAtIJK || !volume.dimensions) {
+    return worldPoint;
+  }
+  const dims = volume.dimensions;
+
+  const sampleHU = (p: cornerstone.Types.Point3): number => {
+    const idx = volume.imageData.worldToIndex(p);
+    if (!idx) return -1000;
+    const i = Math.round(idx[0]);
+    const j = Math.round(idx[1]);
+    const k = Math.round(idx[2]);
+    if (i < 0 || i >= dims[0] || j < 0 || j >= dims[1] || k < 0 || k >= dims[2]) return -1000;
+    const v = volume.voxelManager.getAtIJK(i, j, k);
+    return typeof v === 'number' ? v : -1000;
+  };
+
+  const half = slab * 0.5;
+  const stepMm = 0.3;
+  let bestHU = -Infinity;
+  let bestPoint = worldPoint;
+  for (let t = -half; t <= half; t += stepMm) {
+    const probe: cornerstone.Types.Point3 = [
+      worldPoint[0] + vpn[0] * t,
+      worldPoint[1] + vpn[1] * t,
+      worldPoint[2] + vpn[2] * t,
+    ];
+    const hu = sampleHU(probe);
+    if (hu > bestHU) {
+      bestHU = hu;
+      bestPoint = probe;
+    }
+  }
+  // Only snap if we actually found contrast (>= 150 HU covers blood + calcium)
+  return bestHU >= 150 ? bestPoint : worldPoint;
+}
+
 const POINT_RADIUS = 5;
 const ACTIVE_POINT_RADIUS = 7;
 const LINE_WIDTH = 2;
@@ -156,8 +219,9 @@ export class CoronaryCenterlineOverlay {
         if (segmentHit) {
           this.callbacks.onCenterlineSelected?.(segmentHit.centerlineId);
           if (this.mode === 'draw' && this.activeCenterlineId === segmentHit.centerlineId) {
-            const worldPoint = viewport.canvasToWorld(canvasPoint as cornerstone.Types.Point2);
-            if (worldPoint) {
+            const rawWorld = viewport.canvasToWorld(canvasPoint as cornerstone.Types.Point2);
+            if (rawWorld) {
+              const worldPoint = snapClickToMaxIntensity(rawWorld, viewport);
               const centerline = this.getCenterline(segmentHit.centerlineId);
               if (centerline) {
                 const points = centerline.points.map((point) => ({ ...point }));
@@ -183,10 +247,11 @@ export class CoronaryCenterlineOverlay {
           return;
         }
 
-        const worldPoint = viewport.canvasToWorld(canvasPoint as cornerstone.Types.Point2);
-        if (!worldPoint) {
+        const rawWorld = viewport.canvasToWorld(canvasPoint as cornerstone.Types.Point2);
+        if (!rawWorld) {
           return;
         }
+        const worldPoint = snapClickToMaxIntensity(rawWorld, viewport);
 
         const centerline = this.getCenterline(this.activeCenterlineId);
         if (!centerline) {
@@ -274,10 +339,11 @@ export class CoronaryCenterlineOverlay {
         this.previewCanvasPoint = canvasPoint;
 
         if (this.dragging && this.dragCenterlineId && this.dragPointIndex >= 0) {
-          const worldPoint = viewport.canvasToWorld(canvasPoint as cornerstone.Types.Point2);
-          if (!worldPoint) {
+          const rawWorld = viewport.canvasToWorld(canvasPoint as cornerstone.Types.Point2);
+          if (!rawWorld) {
             return;
           }
+          const worldPoint = snapClickToMaxIntensity(rawWorld, viewport);
 
           const centerline = this.getCenterline(this.dragCenterlineId);
           if (!centerline) {
