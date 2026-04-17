@@ -1,11 +1,12 @@
 import * as cornerstone from '@cornerstonejs/core';
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react';
 import type { CoronaryVesselRecord, WorldPoint3D, LumenContour } from '../coronary/QCATypes';
-import { 
+import {
   toVec, toPoint, add, subtract, scale, dot, cross, magnitude, normalize, clamp, lerpPoint,
   type Vec3, type Frame3D,
   generateCircularContour, applySphereBrush, generateVesselWallContour,
-  pointAtDist, frameAtDist, interpolateContourRadii
+  pointAtDist, frameAtDist, interpolateContourRadii,
+  smoothCenterline
 } from '../coronary/QCAGeometry';
 
 export type SnakeViewMode = 'curved' | 'stretched' | 'calcifications';
@@ -93,8 +94,9 @@ interface Props {
 
 const SNAKE_CANVAS_HEIGHT = 360;
 const PERPENDICULAR_CANVAS_SIZE = 300;
-const HIT_RADIUS = 10;
-const SEGMENT_HIT_DISTANCE = 8;
+const HIT_RADIUS = 16;
+const SEGMENT_HIT_DISTANCE = 12;
+const SMOOTH_SEGMENTS_PER_SPAN = 5;
 const VOI_LOWER = 0;
 const VOI_UPPER = 700;
 const SNAKE_SLAB_HALF_WIDTH_MM = 1.0;
@@ -504,6 +506,49 @@ function sampleSlabMax(
   return best;
 }
 
+/**
+ * Auto-detect lumen boundary at a cross-section using radial ray-cast.
+ * For each of `angularSteps` angles around center, step outward sampling HU.
+ * Lumen edge = position where HU drops below lumenThreshold after
+ * being above it (exits contrast).
+ */
+function autoDetectLumenContour(
+  volume: VolumeContext,
+  center: Vec3,
+  frame: Frame3D,
+  maxRadiusMm = 4,
+  stepMm = 0.1,
+  angularSteps = 48,
+  lumenThreshold = 180,
+): WorldPoint3D[] {
+  const result: WorldPoint3D[] = [];
+  for (let a = 0; a < angularSteps; a++) {
+    const ang = (a / angularSteps) * Math.PI * 2;
+    const cos = Math.cos(ang);
+    const sin = Math.sin(ang);
+    const rayDir: Vec3 = [
+      frame.lateral[0] * cos + frame.perpendicular[0] * sin,
+      frame.lateral[1] * cos + frame.perpendicular[1] * sin,
+      frame.lateral[2] * cos + frame.perpendicular[2] * sin,
+    ];
+
+    let edgeR = maxRadiusMm;
+    let inside = false;
+    for (let r = stepMm; r <= maxRadiusMm; r += stepMm) {
+      const world = add(center, scale(rayDir, r));
+      const hu = sampleVoxelTrilinear(volume, world);
+      if (!inside && hu >= lumenThreshold) inside = true;
+      if (inside && hu < lumenThreshold) {
+        edgeR = Math.max(0.3, r - stepMm * 0.5);
+        break;
+      }
+    }
+    const edge = add(center, scale(rayDir, edgeR));
+    result.push(toPoint(edge));
+  }
+  return result;
+}
+
 function sampleSlabAverage(
   volume: VolumeContext,
   origin: Vec3,
@@ -651,6 +696,8 @@ export function SnakeView({
 
   const [brushRadiusMm, setBrushRadiusMm] = useState(3);
   const [perpendicularMousePos, setPerpendicularMousePos] = useState<CanvasPoint>({ x: -100, y: -100 });
+  const [panelOffset, setPanelOffset] = useState<CanvasPoint>({ x: 0, y: 0 });
+  const panelDragRef = useRef<{ startX: number; startY: number; offsetX: number; offsetY: number } | null>(null);
 
   const snakeCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const perpendicularCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -727,6 +774,13 @@ export function SnakeView({
 
     const layout = buildSnakeLayout(points, rotationDegrees, width, height, viewMode);
     const volume = getVolumeContext(volumeId);
+    // Use densified points for smooth tangent/frame during cMPR sampling only.
+    const sampledPoints = points.length >= 3
+      ? smoothCenterline(points, SMOOTH_SEGMENTS_PER_SPAN)
+      : points;
+    const sampledLayout = sampledPoints.length !== points.length
+      ? buildSnakeLayout(sampledPoints, rotationDegrees, width, height, viewMode)
+      : layout;
 
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -762,11 +816,11 @@ export function SnakeView({
 
     if (volume) {
       drawGrayscaleImage(ctx, Math.floor(width), Math.floor(height), viewMode, (x, y) => {
-        const sample = sampleSnakeColumn(layout, points, rotationDegrees, x + 0.5);
+        const sample = sampleSnakeColumn(sampledLayout, sampledPoints, rotationDegrees, x + 0.5);
         if (!sample) {
           return VOI_LOWER;
         }
-        const lateralOffsetMm = (sample.centerCanvasY - (y + 0.5)) / Math.max(layout.scaleY, 0.001);
+        const lateralOffsetMm = (sample.centerCanvasY - (y + 0.5)) / Math.max(sampledLayout.scaleY, 0.001);
         const origin = add(sample.centerWorld, scale(sample.frame.lateral, lateralOffsetMm));
         return sampleSlabAverage(
           volume,
@@ -1385,7 +1439,26 @@ export function SnakeView({
 
     const target = canvasPointFromMouse(event);
     const layout = buildSnakeLayout(points, rotationDegrees, event.currentTarget.clientWidth, event.currentTarget.clientHeight, viewMode);
-    
+
+    // Check point hit FIRST — points take priority over cursor line so
+    // user can always grab a control point even when it overlaps cursor.
+    const pointIndex = hitPoint(layout.pixels, target);
+    if (pointIndex >= 0) {
+      onSelectPoint(pointIndex);
+      dragRef.current = {
+        kind: 'snake-point',
+        canvas: 'snake',
+        pointIndex,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startPoint: { ...points[pointIndex] },
+        startPoints: clonePoints(points),
+        startRotation: rotationDegrees,
+        moved: false,
+      };
+      return;
+    }
+
     // Check if hitting cursor line
     let cursorX = layout.margin;
     const idx = layout.pixels.findIndex(p => p.distanceMm >= cursorDistanceMm);
@@ -1397,8 +1470,8 @@ export function SnakeView({
     } else if (idx === 0) {
       cursorX = layout.pixels[0].x;
     }
-    
-    if (Math.abs(target.x - cursorX) < 15) {
+
+    if (Math.abs(target.x - cursorX) < 8) {
       dragRef.current = {
         kind: 'cursor-line' as any,
         canvas: 'snake',
@@ -1417,23 +1490,6 @@ export function SnakeView({
       const xMm = layout.minX + (target.x - layout.margin) / Math.max(layout.scaleX, 0.001);
       const hitDistanceMm = Math.max(0, xMm);
       onStenosisCommitted(hitDistanceMm);
-      return;
-    }
-
-    const pointIndex = hitPoint(layout.pixels, target);
-    if (pointIndex >= 0) {
-      onSelectPoint(pointIndex);
-      dragRef.current = {
-        kind: 'snake-point',
-        canvas: 'snake',
-        pointIndex,
-        startClientX: event.clientX,
-        startClientY: event.clientY,
-        startPoint: { ...points[pointIndex] },
-        startPoints: clonePoints(points),
-        startRotation: rotationDegrees,
-        moved: false,
-      };
       return;
     }
 
@@ -1506,10 +1562,16 @@ export function SnakeView({
       return;
     }
     event.preventDefault();
-    const baseIndex = activeIndex >= 0 ? activeIndex : points.length - 1;
-    const nextIndex = clamp(baseIndex + (event.deltaY > 0 ? 1 : -1), 0, points.length - 1);
-    onSelectPoint(nextIndex);
-    onStatusChange?.(`${record.label}: centered control point ${nextIndex + 1}.`);
+
+    // Total centerline length
+    let total = 0;
+    for (let i = 0; i < points.length - 1; i++) {
+      total += magnitude(subtract(toVec(points[i + 1]), toVec(points[i])));
+    }
+    const baseStep = event.shiftKey ? 10 : event.altKey ? 0.5 : 2.5;
+    const stepMm = event.deltaY > 0 ? baseStep : -baseStep;
+    const next = clamp(cursorDistanceMm + stepMm, 0, total);
+    setCursorDistanceMm(next);
   }
 
   function handleSnakeContextMenu(event: ReactMouseEvent<HTMLCanvasElement>) {
@@ -1677,9 +1739,67 @@ export function SnakeView({
     return null;
   }
 
+  function handleAutoDetectLumen() {
+    if (!onContourChange) return;
+    const volume = getVolumeContext(volumeId);
+    if (!volume) {
+      onStatusChange?.('Volume not available yet.');
+      return;
+    }
+    if (points.length < 2) {
+      onStatusChange?.('Need at least 2 centerline points.');
+      return;
+    }
+    let total = 0;
+    for (let i = 0; i < points.length - 1; i++) {
+      total += magnitude(subtract(toVec(points[i + 1]), toVec(points[i])));
+    }
+    const stepMm = 1.0;
+    let count = 0;
+    for (let d = 0; d <= total; d += stepMm) {
+      const center = toVec(pointAtDist(points, d));
+      const frame = frameAtDist(points, d, rotationDegrees);
+      const lumenPts = autoDetectLumenContour(volume, center, frame);
+      onContourChange({ distanceMm: d, points: lumenPts });
+      count += 1;
+    }
+    onStatusChange?.(`Auto-detected lumen at ${count} cross-sections.`);
+  }
+
+  function handlePanelDragStart(event: ReactMouseEvent<HTMLDivElement>) {
+    if ((event.target as HTMLElement).closest('button, select, input, canvas')) return;
+    panelDragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      offsetX: panelOffset.x,
+      offsetY: panelOffset.y,
+    };
+
+    const onMove = (e: MouseEvent) => {
+      const s = panelDragRef.current;
+      if (!s) return;
+      setPanelOffset({ x: s.offsetX + (e.clientX - s.startX), y: s.offsetY + (e.clientY - s.startY) });
+    };
+    const onUp = () => {
+      panelDragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    event.preventDefault();
+  }
+
   return (
-    <div className="snake-floating-panel">
-      <div className="snake-panel-header">
+    <div
+      className="snake-floating-panel"
+      style={{ transform: `translate(${panelOffset.x}px, ${panelOffset.y}px)` }}
+    >
+      <div
+        className="snake-panel-header"
+        onMouseDown={handlePanelDragStart}
+        style={{ cursor: 'move' }}
+      >
         <div>
           <div className="header-kicker">Edit Centerline Layout</div>
           <h3>{record.label} Snake View</h3>
@@ -1690,6 +1810,9 @@ export function SnakeView({
             <option value="stretched">Stretched View</option>
             <option value="calcifications">Calcifications View</option>
           </select>
+          <button className="ghost-btn" onClick={handleAutoDetectLumen} title="Ray-cast HU threshold at every mm along centerline">
+            Auto Lumen
+          </button>
           <button className="ghost-btn" onClick={() => onRotationChange(0)}>
             Reset Rotation
           </button>

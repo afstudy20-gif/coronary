@@ -169,12 +169,10 @@ export default function App() {
         viewport.resetCamera();
       }
 
+      // Volume 3D viewport exists but is not auto-rendered with a heavy preset
+      // to keep load time low. User opts in from the volume-rendering selector.
       const volume3dViewport = engine.getViewport('volume3d') as cornerstone.Types.IVolumeViewport | undefined;
       if (volume3dViewport) {
-        volume3dViewport.setProperties({
-          preset: 'CT-Cardiac3',
-          sampleDistanceMultiplier: 3.8,
-        });
         volume3dViewport.resetCamera();
       }
 

@@ -11,7 +11,7 @@ import { OrientationOverlay } from './OrientationOverlay';
 type OrthoViewportName = 'axial' | 'sagittal' | 'coronal';
 type ViewportName = OrthoViewportName | 'volume3d';
 type ViewMode = 'mpr' | 'mip' | 'axial-slices';
-type VolumeRenderingMode = 'heart' | 'vessels' | 'angio';
+type VolumeRenderingMode = 'off' | 'heart' | 'vessels' | 'angio';
 
 interface ViewportPresentation {
   mode: ViewMode;
@@ -161,7 +161,7 @@ export function ViewportGrid({ renderingEngineId, volumeId, setupToken }: Props)
     clonePresentations
   );
   const [shiftPivotActive, setShiftPivotActive] = useState(false);
-  const [volumeRenderingMode, setVolumeRenderingMode] = useState<VolumeRenderingMode>('heart');
+  const [volumeRenderingMode, setVolumeRenderingMode] = useState<VolumeRenderingMode>('off');
   const [centerlines, setCenterlines] = useState<CenterlineSnapshot[]>([]);
   const dragStateRef = useRef<PivotDragState | null>(null);
   const volumeOverlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -392,6 +392,10 @@ export function ViewportGrid({ renderingEngineId, volumeId, setupToken }: Props)
         return;
       }
 
+      if (volumeRenderingMode === 'off') {
+        return;
+      }
+
       let preset = 'CT-Cardiac3';
       let sampleDistanceMultiplier = 3.8;
       if (volumeRenderingMode === 'vessels') {
@@ -401,7 +405,7 @@ export function ViewportGrid({ renderingEngineId, volumeId, setupToken }: Props)
         preset = 'CT-MIP';
         sampleDistanceMultiplier = 1.0;
       }
-      
+
       viewport.setProperties(
         {
           preset,
@@ -770,6 +774,7 @@ export function ViewportGrid({ renderingEngineId, volumeId, setupToken }: Props)
                 value={volumeRenderingMode}
                 onChange={(event) => setVolumeRenderingMode(event.target.value as VolumeRenderingMode)}
               >
+                <option value="off">Off</option>
                 <option value="heart">Heart</option>
                 <option value="vessels" disabled={!hasCenterlines}>
                   Vessels
