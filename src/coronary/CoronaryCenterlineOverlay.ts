@@ -64,6 +64,14 @@ function snapClickToMaxIntensity(
   return bestHU >= 150 ? bestPoint : worldPoint;
 }
 
+function refocusOrthoViewportsOn(point: WorldPoint3D): void {
+  window.dispatchEvent(
+    new CustomEvent('coronary:cursor-moved', {
+      detail: { point },
+    })
+  );
+}
+
 const POINT_RADIUS = 5;
 const ACTIVE_POINT_RADIUS = 7;
 const LINE_WIDTH = 2;
@@ -225,16 +233,18 @@ export class CoronaryCenterlineOverlay {
               const centerline = this.getCenterline(segmentHit.centerlineId);
               if (centerline) {
                 const points = centerline.points.map((point) => ({ ...point }));
-                points.splice(segmentHit.segmentIndex + 1, 0, {
+                const inserted = {
                   x: worldPoint[0],
                   y: worldPoint[1],
                   z: worldPoint[2],
-                });
+                };
+                points.splice(segmentHit.segmentIndex + 1, 0, inserted);
                 this.callbacks.onCenterlinePointsChanged?.(segmentHit.centerlineId, points);
                 this.callbacks.onControlPointSelected?.(
                   segmentHit.centerlineId,
                   segmentHit.segmentIndex + 1
                 );
+                refocusOrthoViewportsOn(inserted);
               }
             }
           }
@@ -266,6 +276,7 @@ export class CoronaryCenterlineOverlay {
         const nextPoints = this.extendCenterline(centerline.points, nextPoint, canvasPoint, viewportId);
         this.callbacks.onCenterlinePointsChanged?.(this.activeCenterlineId, nextPoints);
         this.callbacks.onControlPointSelected?.(this.activeCenterlineId, nextPoints.length - 1);
+        refocusOrthoViewportsOn(nextPoint);
         event.preventDefault();
         event.stopPropagation();
       };
@@ -357,6 +368,7 @@ export class CoronaryCenterlineOverlay {
             z: worldPoint[2],
           };
           this.callbacks.onCenterlinePointsChanged?.(this.dragCenterlineId, points);
+          refocusOrthoViewportsOn(points[this.dragPointIndex]);
           event.preventDefault();
           event.stopPropagation();
           return;
