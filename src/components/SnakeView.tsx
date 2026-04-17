@@ -745,6 +745,10 @@ export function SnakeView({
 
   const snakeCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const perpendicularCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Offscreen cache for stretched/curved tissue render. Full grayscale
+  // sampling is ~4M trilinear reads per canvas; caching it keeps cursor-line
+  // drags responsive because only the overlay redraws per frame.
+  const tissueCacheRef = useRef<{ canvas: HTMLCanvasElement; key: string } | null>(null);
   const dragRef = useRef<DragState>({
     kind: 'none',
     canvas: 'snake',
@@ -860,21 +864,56 @@ export function SnakeView({
     }
 
     if (volume) {
-      drawGrayscaleImage(ctx, Math.floor(width), Math.floor(height), viewMode, (x, y) => {
-        const sample = sampleSnakeColumn(sampledLayout, sampledPoints, rotationDegrees, x + 0.5, sampledFrames);
-        if (!sample) {
-          return VOI_LOWER;
+      const devW = canvas.width;
+      const devH = canvas.height;
+      const cacheKey = [
+        viewMode,
+        rotationDegrees.toFixed(3),
+        sampledPoints.length,
+        devW,
+        devH,
+        volumeId,
+        // Include first/last point coords so cache invalidates when the
+        // underlying centerline moves, even if its length is unchanged.
+        sampledPoints[0]?.x ?? 0,
+        sampledPoints[0]?.y ?? 0,
+        sampledPoints[0]?.z ?? 0,
+        sampledPoints[sampledPoints.length - 1]?.x ?? 0,
+        sampledPoints[sampledPoints.length - 1]?.y ?? 0,
+        sampledPoints[sampledPoints.length - 1]?.z ?? 0,
+      ].join('|');
+      const cache = tissueCacheRef.current;
+      let tissueCanvas: HTMLCanvasElement;
+      if (cache && cache.key === cacheKey) {
+        tissueCanvas = cache.canvas;
+      } else {
+        tissueCanvas = cache?.canvas ?? document.createElement('canvas');
+        tissueCanvas.width = devW;
+        tissueCanvas.height = devH;
+        const tissueCtx = tissueCanvas.getContext('2d');
+        if (tissueCtx) {
+          drawGrayscaleImage(tissueCtx, Math.floor(width), Math.floor(height), viewMode, (x, y) => {
+            const sample = sampleSnakeColumn(sampledLayout, sampledPoints, rotationDegrees, x + 0.5, sampledFrames);
+            if (!sample) {
+              return VOI_LOWER;
+            }
+            const lateralOffsetMm = (sample.centerCanvasY - (y + 0.5)) / Math.max(sampledLayout.scaleY, 0.001);
+            const origin = add(sample.centerWorld, scale(sample.frame.lateral, lateralOffsetMm));
+            return sampleSlabAverage(
+              volume,
+              origin,
+              sample.frame.perpendicular,
+              SNAKE_SLAB_HALF_WIDTH_MM,
+              SNAKE_SLAB_SAMPLES
+            );
+          });
         }
-        const lateralOffsetMm = (sample.centerCanvasY - (y + 0.5)) / Math.max(sampledLayout.scaleY, 0.001);
-        const origin = add(sample.centerWorld, scale(sample.frame.lateral, lateralOffsetMm));
-        return sampleSlabAverage(
-          volume,
-          origin,
-          sample.frame.perpendicular,
-          SNAKE_SLAB_HALF_WIDTH_MM,
-          SNAKE_SLAB_SAMPLES
-        );
-      });
+        tissueCacheRef.current = { canvas: tissueCanvas, key: cacheKey };
+      }
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(tissueCanvas, 0, 0);
+      ctx.restore();
       ctx.fillStyle = 'rgba(7, 16, 24, 0.18)';
       ctx.fillRect(0, 0, width, 24);
       ctx.fillRect(0, height - 22, width, 22);
@@ -1305,7 +1344,7 @@ export function SnakeView({
       cancelAnimationFrame(rafId);
       obs.disconnect();
     };
-  }, [activeIndex, points, record.color, record.label, rotationDegrees, visible, viewMode, record.lumenContours, editContourMode, brushRadiusMm, perpendicularMousePos]);
+  }, [activeIndex, points, record.color, record.label, rotationDegrees, visible, viewMode, record.lumenContours, editContourMode, brushRadiusMm, perpendicularMousePos, cursorDistanceMm]);
 
   useEffect(() => {
     const handleWindowMouseMove = (event: MouseEvent) => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as cornerstone from '@cornerstonejs/core';
 import * as cornerstoneTools from '@cornerstonejs/tools';
 import {
@@ -116,7 +116,12 @@ export function CoronaryWorkspace({ renderingEngineId, volumeId, series, resetTo
   const [brushRadiusMm, setBrushRadiusMm] = useState(1.5);
   const [diameterHandlesVisible, setDiameterHandlesVisible] = useState(false);
 
-  const records = session.getRecords();
+  // session.getRecords() deep-clones every call. Memoize against `version`
+  // so unrelated re-renders (cursor drag, hover state, etc.) don't break
+  // reference equality for children that use record arrays as effect deps.
+  // forceRefresh() / setVersion bumps `version` whenever session state
+  // actually changes, so this cache stays correct.
+  const records = useMemo(() => session.getRecords(), [session, version]);
   const activeRecord =
     records.find((record) => record.id === activeCenterlineId) ??
     records[0] ??
