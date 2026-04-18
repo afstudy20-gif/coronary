@@ -19,6 +19,8 @@ import {
 } from '../coronary/QCAGeometry';
 import { SnakeView } from './SnakeView';
 import { LongitudinalProfile } from './LongitudinalProfile';
+import { FFRResultsPanel } from './FFRResultsPanel';
+import { computePatientFFR, type PatientFFRResult } from '../coronary/ffr';
 
 const VIEWPORT_IDS = ['axial', 'sagittal', 'coronal'] as const;
 const BRANCH_PRESETS = ['D1', 'D2', 'OM1', 'OM2', 'PDA', 'PLV', 'RI', 'Diag', 'Septal'];
@@ -115,6 +117,9 @@ export function CoronaryWorkspace({ renderingEngineId, volumeId, series, resetTo
   const [editVesselWallMode, setEditVesselWallMode] = useState(false);
   const [brushRadiusMm, setBrushRadiusMm] = useState(1.5);
   const [diameterHandlesVisible, setDiameterHandlesVisible] = useState(false);
+  const [ffrResult, setFFRResult] = useState<PatientFFRResult | null>(null);
+  const [ffrError, setFFRError] = useState<string | null>(null);
+  const [ffrBusy, setFFRBusy] = useState(false);
 
   // session.getRecords() deep-clones every call. Memoize against `version`
   // so unrelated re-renders (cursor drag, hover state, etc.) don't break
@@ -141,6 +146,41 @@ export function CoronaryWorkspace({ renderingEngineId, volumeId, series, resetTo
       setStatus(message);
     }
     setVersion((value) => value + 1);
+  }
+
+  function runPatientFFR() {
+    setFFRBusy(true);
+    setFFRError(null);
+    try {
+      const ready = session.labeledRecordsForAnalysis();
+      if (ready.length === 0) {
+        throw new Error('Label at least one centerline with ≥2 points before running CT-FFR.');
+      }
+      const mass = activeRecord.manual.myocardialMassG;
+      const pa = activeRecord.manual.meanAorticPressureMmHg;
+      if (!mass || mass <= 0) {
+        throw new Error('Myocardial mass (g) is required for the allometric flow estimate.');
+      }
+      if (!pa || pa <= 0) {
+        throw new Error('Mean aortic pressure (mmHg) is required.');
+      }
+      const hyperemiaScale = activeRecord.manual.hyperemiaResistanceScale;
+      const hyperemiaFactor = hyperemiaScale && hyperemiaScale > 0 ? hyperemiaScale : undefined;
+      const result = computePatientFFR({
+        records: ready,
+        meanAorticPressureMmHg: pa,
+        myocardialMassG: mass,
+        hyperemiaFactor,
+      });
+      setFFRResult(result);
+      setStatus(`CT-FFR solved for ${result.vessels.length} vessel(s).`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown CT-FFR failure.';
+      setFFRError(message);
+      setFFRResult(null);
+    } finally {
+      setFFRBusy(false);
+    }
   }
 
   function closeContextMenu() {
@@ -1156,6 +1196,35 @@ export function CoronaryWorkspace({ renderingEngineId, volumeId, series, resetTo
                   ? 'Core geometry and boundary-condition inputs are ready for reduced-order CFD.'
                   : 'CT-FFR requires at least 3 centerline points, lesion boundaries, an MLD site, and baseline pressure and mass inputs.'}
               </div>
+
+              <div className="action-grid compact" style={{ marginTop: '12px' }}>
+                <button
+                  className="primary-btn small"
+                  onClick={runPatientFFR}
+                  disabled={ffrBusy}
+                >
+                  {ffrBusy ? 'Solving…' : 'Run CT-FFR'}
+                </button>
+                {ffrResult && (
+                  <button
+                    className="ghost-btn small"
+                    onClick={() => {
+                      setFFRResult(null);
+                      setFFRError(null);
+                    }}
+                  >
+                    Clear Results
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="workspace-card highlight-special">
+              <div className="card-title-row">
+                <h3>CT-FFR Results</h3>
+                <div className="card-badge">1D Solver</div>
+              </div>
+              <FFRResultsPanel result={ffrResult} error={ffrError} busy={ffrBusy} />
             </div>
 
             <div className="workspace-card">

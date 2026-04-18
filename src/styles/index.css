@@ -1336,3 +1336,90 @@ textarea {
   line-height: 1.3;
 }
 
+
+/* ── CT-FFR Results Panel ── */
+
+.ffr-results-empty {
+  font-size: 11px;
+  padding: 10px 0;
+  color: #a9b9c9;
+  line-height: 1.4;
+}
+.ffr-results-empty.error {
+  color: #ff8a7a;
+}
+
+.ffr-results-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 10px;
+  color: #a9b9c9;
+  margin-bottom: 10px;
+}
+
+.ffr-vessel-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ffr-vessel-card {
+  background: rgba(18, 28, 40, 0.55);
+  border: 1px solid rgba(121, 199, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ffr-vessel-card.severity-normal    { border-left: 3px solid #2ec27e; }
+.ffr-vessel-card.severity-borderline{ border-left: 3px solid #f5b041; }
+.ffr-vessel-card.severity-ischemic  { border-left: 3px solid #e5564a; }
+
+.ffr-vessel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+}
+.ffr-vessel-label {
+  font-weight: 600;
+  color: #eef4fb;
+}
+.ffr-value {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+.ffr-value.severity-normal    { color: #2ec27e; }
+.ffr-value.severity-borderline{ color: #f5b041; }
+.ffr-value.severity-ischemic  { color: #e5564a; }
+
+.ffr-vessel-metrics {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: #a9b9c9;
+  align-items: center;
+}
+.ffr-badge.ischemic {
+  background: rgba(229, 86, 74, 0.18);
+  color: #ff8a7a;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.ffr-spark {
+  display: block;
+  color: #79c7ff;
+  background: rgba(7, 16, 24, 0.5);
+  border-radius: 4px;
+}
