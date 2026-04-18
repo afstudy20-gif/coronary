@@ -21,6 +21,8 @@ import { SnakeView } from './SnakeView';
 import { LongitudinalProfile } from './LongitudinalProfile';
 import { FFRResultsPanel } from './FFRResultsPanel';
 import { computePatientFFR, type PatientFFRResult } from '../coronary/ffr';
+import { resampleCenterline } from '../coronary/ffr/arcResample';
+import { autoDetectStenosis } from '../shared/autoStenosis';
 
 const VIEWPORT_IDS = ['axial', 'sagittal', 'coronal'] as const;
 const BRANCH_PRESETS = ['D1', 'D2', 'OM1', 'OM2', 'PDA', 'PLV', 'RI', 'Diag', 'Septal'];
@@ -146,6 +148,33 @@ export function CoronaryWorkspace({ renderingEngineId, volumeId, series, resetTo
       setStatus(message);
     }
     setVersion((value) => value + 1);
+  }
+
+  function runAutoDetectStenosis() {
+    if (activeRecord.centerlinePoints.length < 3) {
+      setStatus('Centerline needs at least 3 control points before auto-detect.');
+      return;
+    }
+    if (activeRecord.lumenContours.length === 0) {
+      setStatus('Run Auto Lumen in the Stretched View first so the diameter profile exists.');
+      return;
+    }
+    const samples = resampleCenterline(activeRecord);
+    if (samples.length < 5) {
+      setStatus('Insufficient geometry for auto-detection.');
+      return;
+    }
+    const finding = autoDetectStenosis(samples);
+    if (!finding) {
+      setStatus('No significant stenosis found (≥20% DS) on the diameter profile.');
+      return;
+    }
+    session.setStenosisMeasurement(activeRecord.id, finding.proximalMm, finding.distalMm);
+    setCursorDistanceMm(finding.mldMm);
+    setPendingStenosisProximal(null);
+    forceRefresh(
+      `Auto-detected stenosis: ${finding.diameterStenosisPercent.toFixed(0)}% DS, MLD ${finding.mldDiameterMm.toFixed(2)} mm at ${finding.mldMm.toFixed(1)} mm.`
+    );
   }
 
   function runPatientFFR() {
@@ -1000,6 +1029,14 @@ export function CoronaryWorkspace({ renderingEngineId, volumeId, series, resetTo
               ) : (
                 <>
                   <div className="action-grid">
+                    <button
+                      className="primary-btn small"
+                      onClick={runAutoDetectStenosis}
+                      disabled={pendingStenosisProximal != null}
+                      title="Scan the lumen profile for the worst narrowing and set the lesion boundaries automatically"
+                    >
+                      Auto-Detect Stenosis
+                    </button>
                     <button
                       className={`secondary-btn small ${pendingStenosisProximal != null ? 'active' : ''}`}
                       onClick={() => {
