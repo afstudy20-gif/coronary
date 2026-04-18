@@ -59,6 +59,25 @@ export function Toolbar({ renderingEngineId, volumeId, onReset }: Props) {
     return () => window.removeEventListener('keydown', handleKeydown);
   });
 
+  function zoomViewports(factor: number) {
+    // Cornerstone parallelScale is inversely proportional to magnification:
+    // factor < 1 zooms IN (shrinks the viewed volume), factor > 1 zooms OUT.
+    const engine = cornerstone.getRenderingEngine(renderingEngineId);
+    if (!engine) return;
+    for (const viewportId of ['axial', 'sagittal', 'coronal']) {
+      const viewport = engine.getViewport(viewportId) as cornerstone.Types.IVolumeViewport | undefined;
+      if (!viewport) continue;
+      const camera = viewport.getCamera();
+      const currentScale = camera.parallelScale;
+      if (!currentScale || !isFinite(currentScale)) continue;
+      viewport.setCamera({
+        ...camera,
+        parallelScale: Math.max(1e-3, currentScale * factor),
+      });
+      viewport.render();
+    }
+  }
+
   function handleReset() {
     onReset?.();
     const engine = cornerstone.getRenderingEngine(renderingEngineId);
@@ -105,6 +124,24 @@ export function Toolbar({ renderingEngineId, volumeId, onReset }: Props) {
         <span>Center</span>
         <kbd>F</kbd>
       </button>
+      <div className="toolbar-zoom-group">
+        <button
+          className="toolbar-btn compact"
+          onClick={() => zoomViewports(0.8)}
+          title="Zoom In"
+          aria-label="Zoom In"
+        >
+          <span>+</span>
+        </button>
+        <button
+          className="toolbar-btn compact"
+          onClick={() => zoomViewports(1.25)}
+          title="Zoom Out"
+          aria-label="Zoom Out"
+        >
+          <span>−</span>
+        </button>
+      </div>
       <WindowLevelPresets renderingEngineId={renderingEngineId} />
       <button className="toolbar-btn danger" onClick={handleReset}>
         <span>Reset</span>

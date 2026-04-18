@@ -1423,3 +1423,20 @@ textarea {
   background: rgba(7, 16, 24, 0.5);
   border-radius: 4px;
 }
+
+/* ── Toolbar zoom group ── */
+.toolbar-zoom-group {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 4px;
+}
+.toolbar-btn.compact {
+  padding: 0 10px;
+  min-width: 28px;
+  justify-content: center;
+}
+.toolbar-btn.compact span {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+}
