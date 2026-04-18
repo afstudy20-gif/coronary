@@ -182,10 +182,22 @@ export default function AngioApp({ onBack, initialFiles }: AngioAppProps = {}) {
       setLoadingProgress(`Setting up ${series.imageIds.length} frames...`);
       const viewport = engine.getViewport(VIEWPORT_ID) as cornerstone.Types.IStackViewport;
       await viewport.setStack(series.imageIds);
+      // Force the viewport to point at the first frame explicitly. Without
+      // this the stack sometimes settles on an undefined current index and
+      // renders an empty framebuffer even though setStack resolved.
+      try { await viewport.setImageIdIndex(0); } catch { /* ignore */ }
 
       // Clear any stale VOI that survived from a previous series and let
       // Cornerstone auto-compute window/level from the new pixel data.
       try { viewport.resetProperties(); } catch { /* ignore */ }
+
+      // Nudge the rendering engine to recompute canvas dimensions in case
+      // the viewport element mounted with zero height on the first tick.
+      try { engine.resize(true, true); } catch { /* ignore */ }
+
+      // Double-buffer the render across an animation frame so the canvas
+      // has definitely been laid out by the browser before we draw.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       viewport.render();
 
       // Some XA series ship with a degenerate or missing DICOM VOI LUT,
