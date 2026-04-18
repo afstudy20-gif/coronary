@@ -182,23 +182,35 @@ export default function AngioApp({ onBack, initialFiles }: AngioAppProps = {}) {
       setLoadingProgress(`Setting up ${series.imageIds.length} frames...`);
       const viewport = engine.getViewport(VIEWPORT_ID) as cornerstone.Types.IStackViewport;
       await viewport.setStack(series.imageIds);
-      // Force the viewport to point at the first frame explicitly. Without
-      // this the stack sometimes settles on an undefined current index and
-      // renders an empty framebuffer even though setStack resolved.
       try { await viewport.setImageIdIndex(0); } catch { /* ignore */ }
 
-      // Clear any stale VOI that survived from a previous series and let
-      // Cornerstone auto-compute window/level from the new pixel data.
       try { viewport.resetProperties(); } catch { /* ignore */ }
-
-      // Nudge the rendering engine to recompute canvas dimensions in case
-      // the viewport element mounted with zero height on the first tick.
+      // resetCamera recenters the image in the viewport. Without this the
+      // camera can keep a stale focal point or zoom from a previous series,
+      // which parks the new frame entirely outside the visible rect — the
+      // canvas paints the background color and looks pitch black.
+      try { viewport.resetCamera(); } catch { /* ignore */ }
       try { engine.resize(true, true); } catch { /* ignore */ }
 
-      // Double-buffer the render across an animation frame so the canvas
-      // has definitely been laid out by the browser before we draw.
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       viewport.render();
+
+      // Diagnostic: dump actual viewport + canvas state so a black frame
+      // can be attributed to the right layer on the next report.
+      try {
+        const el = document.getElementById('viewport-angio');
+        const canvas = el?.querySelector('canvas') as HTMLCanvasElement | null;
+        const props = viewport.getProperties();
+        const cam = viewport.getCamera();
+        console.info('[loadSeries:render]', {
+          elementSize: el ? { w: el.clientWidth, h: el.clientHeight } : null,
+          canvasSize: canvas ? { w: canvas.width, h: canvas.height } : null,
+          voi: props?.voiRange,
+          invert: props?.invert,
+          currentIndex: viewport.getCurrentImageIdIndex?.(),
+          parallelScale: cam?.parallelScale,
+        });
+      } catch { /* ignore */ }
 
       // Some XA series ship with a degenerate or missing DICOM VOI LUT,
       // so the initial frame renders pitch black even though the pixel
