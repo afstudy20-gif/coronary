@@ -1068,15 +1068,15 @@ textarea {
   }
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 640px) {
   .workspace-layout {
     grid-template-columns: 1fr;
-    grid-template-rows: 200px minmax(320px, 1fr);
+    grid-template-rows: 160px minmax(320px, 1fr);
   }
 
   .workspace-layout.with-qca {
     grid-template-columns: 1fr;
-    grid-template-rows: 160px minmax(300px, 1fr) 400px;
+    grid-template-rows: 140px minmax(300px, 1fr) 360px;
   }
 
   .series-panel {
