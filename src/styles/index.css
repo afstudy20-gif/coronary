@@ -1440,3 +1440,32 @@ textarea {
   font-weight: 700;
   line-height: 1;
 }
+
+/* ── CAC Results Panel ── */
+.cac-category-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  background: rgba(18, 28, 40, 0.55);
+  border-left: 3px solid #2ec27e;
+}
+.cac-category-banner.severity-zero     { border-left-color: #2ec27e; }
+.cac-category-banner.severity-mild     { border-left-color: #79c7ff; }
+.cac-category-banner.severity-moderate { border-left-color: #f5b041; }
+.cac-category-banner.severity-severe   { border-left-color: #e5564a; }
+
+.cac-banner-score {
+  font-size: 22px;
+  font-weight: 700;
+  color: #eef4fb;
+  letter-spacing: 0.4px;
+}
+.cac-banner-label {
+  font-size: 11px;
+  color: #a9b9c9;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}

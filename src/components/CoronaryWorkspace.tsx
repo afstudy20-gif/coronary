@@ -20,9 +20,11 @@ import {
 import { SnakeView } from './SnakeView';
 import { LongitudinalProfile } from './LongitudinalProfile';
 import { FFRResultsPanel } from './FFRResultsPanel';
+import { CACResultsPanel } from './CACResultsPanel';
 import { computePatientFFR, type PatientFFRResult } from '../coronary/ffr';
 import { resampleCenterline } from '../coronary/ffr/arcResample';
 import { autoDetectStenosis } from '../shared/autoStenosis';
+import { computePatientCAC, type CACPatientResult } from '../coronary/cac/cacScoring';
 
 const VIEWPORT_IDS = ['axial', 'sagittal', 'coronal'] as const;
 const BRANCH_PRESETS = ['D1', 'D2', 'OM1', 'OM2', 'PDA', 'PLV', 'RI', 'Diag', 'Septal'];
@@ -122,6 +124,9 @@ export function CoronaryWorkspace({ renderingEngineId, volumeId, series, resetTo
   const [ffrResult, setFFRResult] = useState<PatientFFRResult | null>(null);
   const [ffrError, setFFRError] = useState<string | null>(null);
   const [ffrBusy, setFFRBusy] = useState(false);
+  const [cacResult, setCACResult] = useState<CACPatientResult | null>(null);
+  const [cacError, setCACError] = useState<string | null>(null);
+  const [cacBusy, setCACBusy] = useState(false);
 
   // session.getRecords() deep-clones every call. Memoize against `version`
   // so unrelated re-renders (cursor drag, hover state, etc.) don't break
@@ -209,6 +214,34 @@ export function CoronaryWorkspace({ renderingEngineId, volumeId, series, resetTo
       setFFRResult(null);
     } finally {
       setFFRBusy(false);
+    }
+  }
+
+  function runCalciumScore() {
+    setCACBusy(true);
+    setCACError(null);
+    try {
+      const ready = session.labeledRecordsForAnalysis();
+      if (ready.length === 0) {
+        throw new Error('Label at least one centerline before scoring calcium.');
+      }
+      const result = computePatientCAC({
+        records: ready,
+        volumeId,
+      });
+      if (!result) {
+        throw new Error('CT volume not available. Make sure a series is loaded.');
+      }
+      setCACResult(result);
+      setStatus(
+        `Calcium score: total Agatston ${result.totalAgatston}, volume ${result.totalVolumeMm3.toFixed(1)} mm³.`
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown CAC scoring failure.';
+      setCACError(message);
+      setCACResult(null);
+    } finally {
+      setCACBusy(false);
     }
   }
 
@@ -1283,6 +1316,34 @@ export function CoronaryWorkspace({ renderingEngineId, volumeId, series, resetTo
                 <div className="card-badge">1D Solver</div>
               </div>
               <FFRResultsPanel result={ffrResult} error={ffrError} busy={ffrBusy} />
+            </div>
+
+            <div className="workspace-card highlight-special">
+              <div className="card-title-row">
+                <h3>Calcium Score (CAC)</h3>
+                <div className="card-badge">Agatston</div>
+              </div>
+              <div className="action-grid compact" style={{ marginBottom: '12px' }}>
+                <button
+                  className="primary-btn small"
+                  onClick={runCalciumScore}
+                  disabled={cacBusy}
+                >
+                  {cacBusy ? 'Scoring…' : 'Run Calcium Score'}
+                </button>
+                {cacResult && (
+                  <button
+                    className="ghost-btn small"
+                    onClick={() => {
+                      setCACResult(null);
+                      setCACError(null);
+                    }}
+                  >
+                    Clear Results
+                  </button>
+                )}
+              </div>
+              <CACResultsPanel result={cacResult} error={cacError} busy={cacBusy} />
             </div>
 
             <div className="workspace-card">
