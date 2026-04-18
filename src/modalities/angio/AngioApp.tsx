@@ -183,25 +183,44 @@ export default function AngioApp({ onBack, initialFiles }: AngioAppProps = {}) {
       const viewport = engine.getViewport(VIEWPORT_ID) as cornerstone.Types.IStackViewport;
       await viewport.setStack(series.imageIds);
 
-      // Let Cornerstone use DICOM-embedded W/L or auto-compute from pixel data.
-      // Only apply a fallback VOI if the image appears too dark after initial render.
+      // Clear any stale VOI that survived from a previous series and let
+      // Cornerstone auto-compute window/level from the new pixel data.
+      try { viewport.resetProperties(); } catch { /* ignore */ }
       viewport.render();
 
-      // After first render, check if VOI was set from DICOM metadata.
-      // If not, compute a sensible default from the actual pixel range.
+      // Some XA series ship with a degenerate or missing DICOM VOI LUT,
+      // so the initial frame renders pitch black even though the pixel
+      // data is perfectly valid. Sample the first loaded image, derive a
+      // robust 2nd-98th-percentile VOI from the actual pixel array, and
+      // force-apply it. Photometric interpretation MONOCHROME1 is also
+      // honored explicitly because the stack viewport does not always
+      // auto-invert from the DICOM tag.
       try {
-        const image = viewport.getImageData();
-        if (image) {
-          const props = viewport.getProperties();
-          const voiRange = props.voiRange;
-          // If no VOI was set or range is degenerate, auto-compute
-          if (!voiRange || voiRange.lower === voiRange.upper) {
-            viewport.resetProperties();
+        const imageId = series.imageIds[0];
+        const image: any = await cornerstone.imageLoader.loadAndCacheImage(imageId);
+        const pixels: ArrayLike<number> | undefined =
+          image?.getPixelData?.() ?? image?.imageFrame?.pixelData;
+        if (pixels && pixels.length > 0) {
+          // Reservoir-style downsample so we don't sort millions of pixels.
+          const sampleStride = Math.max(1, Math.floor(pixels.length / 100000));
+          const sample: number[] = [];
+          for (let i = 0; i < pixels.length; i += sampleStride) sample.push(pixels[i]);
+          sample.sort((a, b) => a - b);
+          const lowerIdx = Math.floor(sample.length * 0.02);
+          const upperIdx = Math.floor(sample.length * 0.98);
+          const lower = sample[lowerIdx];
+          const upper = sample[upperIdx];
+          if (Number.isFinite(lower) && Number.isFinite(upper) && upper > lower) {
+            const invert = image?.photometricInterpretation === 'MONOCHROME1';
+            viewport.setProperties({
+              voiRange: { lower, upper },
+              invert,
+            });
             viewport.render();
           }
         }
-      } catch {
-        // Non-fatal - default VOI is acceptable
+      } catch (voiErr) {
+        console.warn('[loadSeries] VOI auto-compute failed; using Cornerstone default', voiErr);
       }
     } catch (seriesError: any) {
       console.error(`[loadSeries:${stage}]`, seriesError);
