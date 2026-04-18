@@ -1000,7 +1000,7 @@ export function CoronaryWorkspace({ renderingEngineId, volumeId, series, resetTo
               ) : (
                 <>
                   <div className="action-grid">
-                    <button 
+                    <button
                       className={`secondary-btn small ${pendingStenosisProximal != null ? 'active' : ''}`}
                       onClick={() => {
                         if (pendingStenosisProximal != null) {
@@ -1008,15 +1008,36 @@ export function CoronaryWorkspace({ renderingEngineId, volumeId, series, resetTo
                           setStatus('Measurement cancelled.');
                         } else {
                           setPendingStenosisProximal(cursorDistanceMm);
-                          setStatus('Stenosis measurement started. Move the cursor on the Stretched View to the distal boundary and click to finish.');
+                          setStatus('Proximal boundary marked. Move the cursor to the distal boundary, then press Finish Point.');
                         }
                       }}
                     >
                       {pendingStenosisProximal != null ? 'Cancel Measurement' : 'Add Measurement'}
                     </button>
+                    {pendingStenosisProximal != null && (
+                      <button
+                        className="primary-btn small"
+                        onClick={() => {
+                          const distalMm = cursorDistanceMm;
+                          const proximalMm = pendingStenosisProximal;
+                          if (proximalMm == null) return;
+                          if (Math.abs(distalMm - proximalMm) < 1) {
+                            setStatus('Distal boundary must be at least 1 mm away from the proximal boundary.');
+                            return;
+                          }
+                          session.setStenosisMeasurement(activeRecord.id, proximalMm, distalMm);
+                          setPendingStenosisProximal(null);
+                          forceRefresh('Stenosis measurement saved.');
+                        }}
+                      >
+                        Finish Point
+                      </button>
+                    )}
                   </div>
                   <div className="instruction-box">
-                    Move the cursor line to the proximal boundary, then click 'Add Measurement'. Finally, left-click at the distal boundary to place the stenosis.
+                    {pendingStenosisProximal != null
+                      ? `Proximal marked at ${pendingStenosisProximal.toFixed(1)} mm. Move the Stretched View cursor to the distal boundary, then press Finish Point.`
+                      : "Move the cursor line to the proximal boundary, then click 'Add Measurement'. After that, move the cursor to the distal boundary and press Finish Point (left-click on the Stretched View also commits)."}
                   </div>
                 </>
               )}
