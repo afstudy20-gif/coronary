@@ -444,6 +444,27 @@ export function AngioViewer({ renderingEngineId, viewportId, imageCount, qcaSess
     return () => document.removeEventListener('contextmenu', h);
   }, []);
 
+  // Watch the viewport element for size changes. The initial mount often
+  // reports a zero-height rect because layout has not settled yet, which
+  // leaves the Cornerstone canvas stuck at its 300x150 default. When the
+  // element grows we nudge the rendering engine to recompute dimensions
+  // and repaint, which turns the black viewport into a live image.
+  useEffect(() => {
+    const el = document.getElementById('viewport-angio');
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      const engine = cornerstone.getRenderingEngine(renderingEngineId);
+      if (!engine) return;
+      try { engine.resize(true, true); } catch { /* ignore */ }
+      const vp = engine.getViewport(viewportId) as cornerstone.Types.IStackViewport | undefined;
+      if (vp && el.clientHeight > 0 && el.clientWidth > 0) {
+        try { vp.render(); } catch { /* ignore */ }
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [renderingEngineId, viewportId]);
+
   return (
     <div className="angio-viewer">
       <div className="angio-viewport-shell">

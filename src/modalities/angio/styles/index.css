@@ -324,7 +324,12 @@ textarea {
 
 .angio-viewport-shell {
   flex: 1;
-  min-height: 0;
+  /* min-height must stay above zero. On some layouts the parent flex
+     chain collapses to 0 before Cornerstone can resize its canvas,
+     which parks the viewport at the default 300x150 and renders the
+     image off-screen. A 480 px floor keeps a visible canvas in all
+     reported layouts without stopping the element from growing. */
+  min-height: 480px;
   position: relative;
   border-radius: 20px;
   overflow: hidden;
