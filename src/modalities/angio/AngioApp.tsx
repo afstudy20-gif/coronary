@@ -154,8 +154,12 @@ export default function AngioApp({ onBack, initialFiles }: AngioAppProps = {}) {
     try {
       stage = 'destroyToolGroup';
       destroyToolGroup();
-      stage = 'purgeCache';
-      cornerstone.cache.purgeCache();
+      // Skip cornerstone.cache.purgeCache() on a series switch: the
+      // dicom-image-loader fileManager registers blob URLs up front; a
+      // blanket purge revokes those blobs and the in-flight setStack()
+      // loads immediately error out with "The image was purged from the
+      // cache before it completed loading", leaving the viewport black.
+      // Cache pressure is already bounded by the loader's own LRU policy.
 
       stage = 'resolveViewportElement';
       const viewportElement = document.getElementById('viewport-angio') as HTMLDivElement | null;
